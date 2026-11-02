@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Load",
+  "version": "1.0",
+  "description": "Keeps Load in step with Brightspace and MyLab, and tracks time on coursework.",
+  "icons": { "48": "icon-48.png", "96": "icon-96.png", "128": "icon-128.png", "512": "icon-512.png" },
+  "action": { "default_popup": "popup.html", "default_icon": { "16": "icon-16.png", "32": "icon-32.png" }, "default_title": "Load" },
+  "background": { "scripts": ["background.js"] },
+  "permissions": ["alarms", "storage", "tabs", "contextMenus", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    { "matches": ["https://purdue.brightspace.com/*"], "js": ["brightspace.js"], "run_at": "document_idle" },
+    { "matches": ["https://mylab.pearson.com/*"], "js": ["mylab.js"], "run_at": "document_idle" },
+    { "matches": ["http://*/*", "https://*/*"], "js": ["activity.js"], "run_at": "document_idle", "all_frames": false }
+  ]
+}

@@ -1,0 +1,8 @@
+node_modules/
+fixtures/
+app/dist/
+extension/dist/
+extension/xcode/build/
+extension/xcode/dd/
+.DS_Store
+*.local.json
