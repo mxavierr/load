@@ -98,7 +98,7 @@ async function ingest(snap) {
       mylab: snap.mylab ? { ok: !!snap.mylab.ok, n: snap.mylab.rows?.length || 0, error: snap.mylab.error } : undefined,
     });
     const logDoc = { ...files.log.doc, syncs: pruneSyncs({ ...(files.log.doc.syncs || {}), [syncId]: rec }) };
-    const dbDoc = { ...db, settings: { ...(db.settings || {}), main: stamp(db.settings?.main, { lastSync: report.at, syncRequest: undefined }) } };
+    const dbDoc = { ...db, settings: { ...(db.settings || {}), main: stamp(db.settings?.main, { lastSync: report.at, syncRequest: undefined, extError: undefined }) } };
     await files.db.push(dbDoc, `sync ${report.at}`);
     await files.library.push(library, `library ${report.at}`);
     await files.log.push(logDoc, `sync log ${report.at}`);
@@ -343,6 +343,17 @@ const server = http.createServer(async (req, res) => {
       await files.db.pull().catch(() => {});
       noteExtension(url.searchParams.get('v'));
       return send(res, 200, extState());
+    }
+    if (p === '/api/ext/report' && req.method === 'POST') {
+      // A sync the extension could not finish: log it and show it in Status.
+      const b = await readBody(req);
+      if (b.started) { log('extension sync started', b.reason || '', JSON.stringify(b.access || {})); return send(res, 200, { ok: true }); }
+      log('extension sync failed', b.reason || '', b.error || '', JSON.stringify(b.access || {}));
+      exclusive(async () => {
+        await files.db.pull();
+        await files.db.push({ ...files.db.doc, settings: { ...files.db.doc.settings, main: stamp(files.db.doc.settings?.main, { extError: { at: b.at, error: String(b.error || '').slice(0, 300), access: b.access } }) } }, 'extension error');
+      }).catch((e) => log('ext report', e.message));
+      return send(res, 200, { ok: true });
     }
     if (p === '/api/ingest' && req.method === 'POST') return send(res, 200, await ingest(await readBody(req)));
     if (p === '/api/sessions' && req.method === 'POST') { await addSessions((await readBody(req)).sessions || []); return send(res, 200, { ok: true }); }

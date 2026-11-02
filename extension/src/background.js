@@ -62,40 +62,69 @@ async function tick() {
 
 // ---------------------------------------------------------------- sync
 
-let syncing = false;
+let syncing = 0;
 async function runSync(reason) {
-  if (syncing) return;
-  syncing = true;
+  // A sync that somehow never finishes must not block every later one.
+  if (syncing && Date.now() - syncing < 6 * 60e3) return;
+  syncing = Date.now();
+  hub('/api/ext/report', { at: new Date().toISOString(), reason, started: true, access: await siteAccess() }).catch(() => {});
+  return within(6 * 60e3, sync(reason), 'sync').catch(async (e) => {
+    await store.set('lastResult', { at: Date.now(), ok: false, errors: [String(e.message || e)] });
+    hub('/api/ext/report', { at: new Date().toISOString(), reason, error: String(e.message || e) }).catch(() => {});
+  }).finally(() => { syncing = 0; });
+}
+
+async function sync(reason) {
   await store.set('lastTry', Date.now());
   setBadge('…');
   const opened = [];
+  let step = 'checking access';
   try {
     const s = state || (await refresh());
     const cfg = { term: s?.settings?.term, extraOus: s?.settings?.extraOus };
+    const access = await siteAccess();
+    if (access.brightspace === false) throw new Error('Safari has not given Load access to purdue.brightspace.com');
+    step = 'finding a Brightspace tab';
     const tab = await brightspaceTab(opened);
+    step = 'reading Brightspace';
     const snap = await sendWithRetry(tab.id, { type: 'collect', cfg }, 90e3);
     snap.reason = reason;
     if (!snap.ok && snap.errors?.includes('signed-out')) throw new Error('signed-out');
+    step = 'reading MyLab';
     snap.mylab = await readMyLab(tab.id, s?.settings?.mylab, opened).catch((e) => ({ ok: false, error: String(e.message || e) }));
+    step = 'saving';
     const report = await hub('/api/ingest', snap);
     await store.set('lastResult', { at: Date.now(), ok: report.ok, added: report.added?.length || 0, errors: report.errors || [] });
     setBadge(report.errors?.length ? '!' : '');
   } catch (e) {
-    await store.set('lastResult', { at: Date.now(), ok: false, errors: [String(e.message || e)] });
+    const msg = `${step}: ${String(e.message || e)}`;
+    await store.set('lastResult', { at: Date.now(), ok: false, errors: [msg] });
+    hub('/api/ext/report', { at: new Date().toISOString(), reason, error: msg, access: await siteAccess() }).catch(() => {});
     setBadge('!');
   } finally {
     for (const id of opened) browser.tabs.remove(id).catch(() => {});
-    syncing = false;
   }
+}
+
+/** Whether Safari lets the extension run on the sites a sync needs (null = cannot tell). */
+async function siteAccess() {
+  const has = async (o) => { try { return await browser.permissions.contains({ origins: [o] }); } catch { return null; } };
+  return { brightspace: await has(`${BS}/*`), mylab: await has('https://mylab.pearson.com/*') };
 }
 
 async function brightspaceTab(opened) {
   const tabs = await browser.tabs.query({ url: `${BS}/*` });
   for (const t of tabs) {
     try {
-      await browser.tabs.sendMessage(t.id, { type: 'ping' });
+      await ask(t.id, { type: 'ping' }, 3000);
       return t;
-    } catch { /* tab without our script yet */ }
+    } catch { /* tab opened before the extension was turned on: add our script to it */ }
+    try {
+      await within(5000, browser.scripting.executeScript({ target: { tabId: t.id }, files: ['brightspace.js'] }), 'inject');
+      await sleep(300);
+      await ask(t.id, { type: 'ping' }, 3000);
+      return t;
+    } catch { /* try the next tab */ }
   }
   const t = await browser.tabs.create({ url: `${BS}/d2l/home`, active: false });
   opened.push(t.id);
@@ -106,7 +135,7 @@ async function brightspaceTab(opened) {
 
 async function readMyLab(bsTabId, ml, opened) {
   if (!ml?.ou || !ml?.topicId) return { ok: false, error: 'not configured' };
-  const { url } = await browser.tabs.sendMessage(bsTabId, { type: 'topicUrl', ou: ml.ou, topicId: ml.topicId });
+  const { url } = await ask(bsTabId, { type: 'topicUrl', ou: ml.ou, topicId: ml.topicId }, 15000);
   if (!url) throw new Error('MyLab link not found');
   // The course's Pearson link signs you in to Pearson; the assignments page then opens in the same tab.
   const t = await browser.tabs.create({ url: BS + url, active: false });
@@ -135,7 +164,7 @@ async function sendWithRetry(tabId, msg, timeout) {
   let err;
   while (Date.now() < end) {
     try {
-      const r = await browser.tabs.sendMessage(tabId, msg);
+      const r = await ask(tabId, msg, Math.max(1000, end - Date.now()));
       if (r !== undefined) return r;
     } catch (e) { err = e; }
     await sleep(1500);
@@ -144,6 +173,12 @@ async function sendWithRetry(tabId, msg, timeout) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Safari can leave a message to a tab with no listener pending forever; never wait on one unbounded. */
+function within(ms, promise, what) {
+  return Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`${what} timed out`)), ms))]);
+}
+const ask = (tabId, msg, ms = 8000) => within(ms, browser.tabs.sendMessage(tabId, msg), msg.type);
 function setBadge(text) {
   browser.action.setBadgeText({ text }).catch(() => {});
   if (text) browser.action.setBadgeBackgroundColor({ color: text === '!' ? '#e03e3e' : '#888' }).catch(() => {});

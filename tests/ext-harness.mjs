@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const [hubUrl, snapPath, mylabPath] = process.argv.slice(2);
+// It writes test tasks, sessions and syncs: never aim it at the real hub.
+if (/:8766\b/.test(hubUrl || "")) { console.error("Refusing to run against the live hub (8766). Use a throwaway hub."); process.exit(1); }
 const snap = JSON.parse(fs.readFileSync(snapPath, 'utf8'));
 const mylab = JSON.parse(fs.readFileSync(mylabPath, 'utf8')).mylab;
 

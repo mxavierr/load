@@ -383,6 +383,7 @@ export function HealthBlock() {
   const syncDot = !last ? 'idle' : last.ok && !last.errors?.length ? 'ok' : last.errors?.some((e) => /signed-out/.test(e)) ? 'err' : 'warn';
   const requested = s.syncRequest && (!s.lastSync || s.syncRequest > s.lastSync) && Date.now() - Date.parse(s.syncRequest) < 6 * 36e5 ? s.syncRequest : null;
   const extSeen = [conn.value.ext, s.extSeen].filter(Boolean).sort().pop();
+  const failed = s.extError && (!s.lastSync || s.extError.at > s.lastSync) ? s.extError : null;
   const extAlive = extSeen && Date.now() - Date.parse(extSeen) < 45 * 60e3;
   // Items already acted on, or about tasks that are now done or gone, drop off the report.
   const items = (report?.items || []).filter((it, i) => it.level !== 'ok' && !(report.applied || []).includes(i)
@@ -392,9 +393,9 @@ export function HealthBlock() {
     <div>
       <div class="status">
         <div class="statusRow">
-          <span class={`dot ${requested ? 'idle' : syncDot}`} />
-          <span class="lbl">{requested ? 'Sync requested' : `Brightspace ${last ? `synced ${relTime(last.at)}` : 'not synced yet'}`}
-            <small>{requested ? (extAlive ? 'Starting within a minute…' : 'Waiting for the Safari extension on the Mac.') : last ? summarize(last) : `Runs at ${s.syncTimes.join(' and ')} while the Mac is in use.`}</small>
+          <span class={`dot ${failed ? 'err' : requested ? 'idle' : syncDot}`} />
+          <span class="lbl">{failed ? 'Last sync failed' : requested ? 'Sync requested' : `Brightspace ${last ? `synced ${relTime(last.at)}` : 'not synced yet'}`}
+            <small>{failed ? `${failed.error} · ${relTime(failed.at)}` : requested ? (extAlive ? 'Starting within a minute…' : 'Waiting for the Safari extension on the Mac.') : last ? summarize(last) : `Runs at ${s.syncTimes.join(' and ')} while the Mac is in use.`}</small>
           </span>
           <button class="iconBtn" title="Sync now" onClick={requestSync}><Icon n="sync" size={15} /></button>
         </div>
