@@ -16,6 +16,7 @@ const emit = (name, ...a) => (listeners[name] || []).map((f) => f(...a));
 const storage = {};
 const tabs = new Map([[1, { id: 1, url: 'https://purdue.brightspace.com/d2l/home', status: 'complete' }]]);
 let nextTab = 10;
+let held = null;
 const log = [];
 const browser = {
   runtime: { getManifest: () => ({ version: '1.1' }), onInstalled: on('installed'), onStartup: on('startup'), onMessage: on('message') },
@@ -32,7 +33,8 @@ const browser = {
     sendMessage: async (id, msg) => {
       const t = tabs.get(id);
       if (msg.type === 'ping') return { ok: true };
-      if (msg.type === 'collect') { log.push(`collect in tab ${id}`); return { ...snap, at: new Date().toISOString() }; }
+      if (msg.type === 'collect') { log.push(`collect in tab ${id}`); held = JSON.stringify({ ...snap, at: new Date().toISOString() }); return { chunks: Math.ceil(held.length / 150000), size: held.length, ok: true }; }
+      if (msg.type === 'chunk') return { i: msg.i, data: held.slice(msg.i * 150000, (msg.i + 1) * 150000) };
       if (msg.type === 'topicUrl') return { url: '/d2l/common/dialogs/quickLink/quickLink.d2l?ou=1638698&type=lti' };
       if (msg.type === 'parseMyLab') { if (!/DoAssignments/.test(t.url)) throw new Error('no receiver'); return { ok: true, rows: mylab.rows }; }
     },

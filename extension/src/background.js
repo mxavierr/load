@@ -87,7 +87,12 @@ async function sync(reason) {
     step = 'finding a Brightspace tab';
     const tab = await brightspaceTab(opened);
     step = 'reading Brightspace';
-    const snap = await sendWithRetry(tab.id, { type: 'collect', cfg }, 90e3);
+    const head = await sendWithRetry(tab.id, { type: 'collect', cfg }, 120e3);
+    step = `fetching ${head.chunks} part(s) of the Brightspace data`;
+    let text = '';
+    for (let i = 0; i < head.chunks; i++) text += (await ask(tab.id, { type: 'chunk', i }, 15000)).data || '';
+    if (text.length !== head.size) throw new Error(`got ${text.length} of ${head.size} bytes`);
+    const snap = JSON.parse(text);
     snap.reason = reason;
     if (!snap.ok && snap.errors?.includes('signed-out')) throw new Error('signed-out');
     step = 'reading MyLab';
