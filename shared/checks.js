@@ -47,7 +47,7 @@ export function runChecks({ db, log, library, settings = {}, now = new Date() })
       if (a.course !== b.course) continue;
       if ((a.refs || []).some((r) => (b.refs || []).includes(r))) continue;
       const codes = (x) => (x.title.match(/\b[A-Z]{2,5}\s?\d{3}\b/g) || []).join();
-      if (codes(a) !== codes(b)) continue; // "ENGT 182 Exam 2" vs "MA 261 Midterm 2"
+      if (codes(a) && codes(b) && codes(a) !== codes(b)) continue; // "ENGT 182 Exam 2" vs "MA 261 Midterm 2"
       // Two synced items are duplicates only when their titles match: "LAB 09 : IPYNB" and
       // "LAB 09 : PDF" are separate uploads. A hand-made one is judged as a placeholder.
       const sameFam = family(a.title) === family(b.title) && a.title.replace(/\D/g, '') === b.title.replace(/\D/g, '');

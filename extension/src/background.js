@@ -1,11 +1,11 @@
 // Load for Safari: the twice-daily Brightspace + MyLab sync and automatic time tracking.
 // It talks only to the Load hub on this Mac (127.0.0.1:8766), which owns the data.
 
-const HUB = 'http://127.0.0.1:8766';
+import { shouldSync, matchTask as match, beat, close, GAP } from './logic.js';
+
+const HUB = globalThis.__LOAD_HUB__ || 'http://127.0.0.1:8766'; // overridable for tests
 const BS = 'https://purdue.brightspace.com';
-const ACTIVE_WINDOW = 10 * 60e3; // "in use" = activity in the last 10 minutes
-const GAP = 5 * 60e3; // a pause longer than this ends a work session
-const MIN_SESSION = 2 * 60e3;
+const VERSION = browser.runtime.getManifest().version;
 
 const store = {
   async get(k, d) { const r = await browser.storage.local.get(k); return r[k] ?? d; },
@@ -39,7 +39,7 @@ browser.alarms.onAlarm.addListener((a) => { if (a.name === 'tick') tick().catch(
 let state = null;
 async function refresh() {
   try {
-    state = await hub('/api/ext');
+    state = await hub(`/api/ext?v=${VERSION}`);
     await store.set('state', state);
     await store.set('hubOk', Date.now());
   } catch {
@@ -48,34 +48,16 @@ async function refresh() {
   return state;
 }
 
-/** The most recent scheduled sync time that has passed, as an epoch ms. */
-function lastSlot(times, now = new Date()) {
-  let best = 0;
-  for (const day of [0, -1]) {
-    for (const t of times || []) {
-      const [h, m] = t.split(':').map(Number);
-      const d = new Date(now);
-      d.setDate(d.getDate() + day);
-      d.setHours(h, m, 0, 0);
-      if (d <= now && d.getTime() > best) best = d.getTime();
-    }
-  }
-  return best;
-}
-
 async function tick() {
   const s = await refresh();
   await closeIdleSession();
   await flushSessions();
   if (!s) return;
-  const lastSync = Date.parse(s.lastSync || 0) || 0;
-  const lastTry = await store.get('lastTry', 0);
-  const lastActive = await store.get('lastActive', 0);
-  const requested = s.syncRequest && Date.parse(s.syncRequest) > lastSync && Date.parse(s.syncRequest) > lastTry;
-  const due = lastSlot(s.settings?.syncTimes) > Math.max(lastSync, lastTry);
-  const inUse = Date.now() - lastActive < ACTIVE_WINDOW;
-  // A scheduled sync waits until you are actually at the Mac; one you asked for runs now.
-  if (requested || (due && inUse)) await runSync(requested ? 'requested' : 'scheduled');
+  const why = shouldSync({
+    times: s.settings?.syncTimes, lastSync: s.lastSync, request: s.syncRequest,
+    lastTry: await store.get('lastTry', 0), lastActive: await store.get('lastActive', 0),
+  });
+  if (why) await runSync(why);
 }
 
 // ---------------------------------------------------------------- sync
@@ -169,18 +151,7 @@ function setBadge(text) {
 
 // ---------------------------------------------------------------- time tracking
 
-/** Which task, if any, a page belongs to. */
-function matchTask(url, s) {
-  if (!s?.index || !url) return null;
-  const bare = url.replace(/^https?:\/\//, '').split('#')[0];
-  const hw = /doHomework\((\d+)/.exec(url) || /[?&](?:homeworkId|assignmentId|itemid)=(\d{6,})/i.exec(url);
-  for (const t of s.index) {
-    for (const k of t.keys) {
-      if (k.startsWith('mylab:') ? hw && k === `mylab:${hw[1]}` : k.includes('=') ? new RegExp(`[?&]${k}(?:&|$)`).test(url) : bare.includes(k)) return t.id;
-    }
-  }
-  return null;
-}
+const matchTask = (url, s) => match(url, s?.index);
 
 browser.tabs.onCreated.addListener(async (tab) => {
   // A tool opened from a task's page (WileyPLUS, Colab, a PDF) inherits that task.
@@ -194,7 +165,12 @@ browser.tabs.onRemoved.addListener(async (id) => {
 });
 
 browser.runtime.onMessage.addListener((msg, sender, reply) => {
-  if (msg?.type === 'beat') { onBeat(msg, sender.tab).catch(() => {}); return false; }
+  if (msg?.type === 'beat') {
+    // One at a time: two visible windows can beat together, and each reads then writes the session.
+    const now = Date.now();
+    beats = beats.then(() => onBeat(msg, sender.tab, now)).catch((e) => console.warn('beat', e));
+    return false;
+  }
   if (msg?.type === 'popup') { popupState().then(reply); return true; }
   if (msg?.type === 'sync') { runSync('popup'); reply({ ok: true }); return false; }
   if (msg?.type === 'timer') { hub('/api/timer', { task: msg.task || null }).then(refresh).then(() => reply({ ok: true }), (e) => reply({ ok: false, error: String(e) })); return true; }
@@ -208,8 +184,8 @@ async function attachTab(tabId, task) {
   await store.set('tabTask', map);
 }
 
-async function onBeat({ url }, tab) {
-  const now = Date.now();
+let beats = Promise.resolve();
+async function onBeat({ url }, tab, now = Date.now()) {
   await store.set('lastActive', now);
   const s = state || (await store.get('state', null));
   if (s?.timer) return; // a timer you started yourself already covers this
@@ -217,29 +193,22 @@ async function onBeat({ url }, tab) {
   const map = await store.get('tabTask', {});
   if (task && tab?.id != null && map[tab.id] !== task) { map[tab.id] = task; await store.set('tabTask', map); }
   if (!task && tab?.id != null) task = map[tab.id] || null;
-  let cur = await store.get('session', null);
-  if (cur && (cur.task !== task || now - cur.last > GAP)) {
-    await closeSession(cur);
-    cur = null;
-  }
-  if (!task) { await store.set('session', null); return; }
-  cur = cur || { task, s: now, last: now, url };
-  cur.last = now;
-  await store.set('session', cur);
+  const r = beat(await store.get('session', null), task, now, url);
+  if (r.finished) await queue(r.finished);
+  await store.set('session', r.cur);
 }
 
-async function closeSession(cur) {
-  const end = cur.last + 20e3;
-  if (end - cur.s < MIN_SESSION) return;
+async function queue(rec) {
   const pending = await store.get('pending', []);
-  pending.push({ id: `s:x${cur.s.toString(36)}`, task: cur.task, s: new Date(cur.s).toISOString(), e: new Date(end).toISOString(), src: 'auto', url: cur.url });
+  pending.push(rec);
   await store.set('pending', pending);
 }
 
 async function closeIdleSession() {
   const cur = await store.get('session', null);
   if (cur && Date.now() - cur.last > GAP) {
-    await closeSession(cur);
+    const rec = close(cur);
+    if (rec) await queue(rec);
     await store.set('session', null);
   }
 }

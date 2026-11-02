@@ -1,6 +1,6 @@
 import { ui, toggleDone, openPeek, timer, startTimer, stopTimer, plan } from './state.js';
 import { Icon, CoursePill, courseColor, dueInfo } from './ui.jsx';
-import { fmtMin, fmtDay, today as todayFn } from '../../shared/time.js';
+import { fmtMin, fmtDay, today as todayFn, addDays } from '../../shared/time.js';
 import { KINDS } from '../../shared/model.js';
 
 /**
@@ -42,7 +42,7 @@ export function TaskRow({ t, min, why, showDue = true, compact }) {
             {why === 'ahead' && min && est && min < est - spent - 1 ? <span class="tag">{fmtMin(min)} of {fmtMin(Math.max(est - spent, min))}</span> : null}
             {t.done && t.doneBy === 'sync' && <span class="tag green">Submitted</span>}
             {!t.done && t.sub && <span class="tag green">Submitted</span>}
-            {t.moved && !t.done && <span class="tag orange" title={`was ${t.moved.from}`}>Moved</span>}
+            {t.moved && !t.done && t.moved.at >= addDays(todayFn(), -3) && <span class="tag orange" title={`was ${t.moved.from.replace('T', ' ')}`}>Moved</span>}
             {t.srcDue && t.srcDue !== t.due && !t.done && <span class="tag orange">Date differs</span>}
             {t.missing && !t.done && <span class="tag">Not in Brightspace</span>}
             {t.checklist?.length ? <span class="tag">{t.checklist.filter((x) => x.done).length}/{t.checklist.length}</span> : null}

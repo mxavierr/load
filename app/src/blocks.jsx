@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'preact/hooks';
-import { db, log, library, plan, tasks, settings, courses, findings, conn, updateTask, runOps, requestSync, ask, openPeek, toast, isHub, nowTick, setLayout } from './state.js';
+import { db, log, library, plan, tasks, settings, courses, findings, conn, updateTask, runOps, requestSync, ask, openPeek, toast, isHub, nowTick, setLayout, markReportItem } from './state.js';
 import { TaskRow } from './TaskRow.jsx';
 import { Icon, Ring, CoursePill, courseColor, courseShort, relTime, Empty } from './ui.jsx';
 import { live } from '../../shared/doc.js';
-import { addDays, dayOf, fmtDay, fmtMin, today as todayFn, weekday, DOW, daysBetween, toLocal } from '../../shared/time.js';
+import { addDays, dayOf, fmtDay, fmtMin, today as todayFn, weekday, DOW, daysBetween, toLocal, asLocal } from '../../shared/time.js';
 import { insights } from '../../shared/insights.js';
 import { describeOp } from '../../shared/ops.js';
 
@@ -30,8 +30,7 @@ export function TodayBlock() {
   const items = p.days[0].items.filter((i) => T[i.id] && !T[i.id].done);
   const overdue = items.filter((i) => i.why === 'overdue');
   const rest = items.filter((i) => i.why !== 'overdue');
-  const doneToday = live(T).filter((t) => t.done && (t.doneAt || '').slice(0, 10) === today && t.doneBy !== 'sync').concat(
-    live(T).filter((t) => t.done && t.doneBy === 'sync' && (t.doneAt || '').slice(0, 10) === today));
+  const doneToday = live(T).filter((t) => t.done && (asLocal(t.doneAt, tz) || '').slice(0, 10) === today);
   const events = live(T).filter((t) => t.due && dayOf(t.due) === today && (t.kind === 'event' || t.kind === 'exam'));
   const planned = rest.reduce((a, i) => a + i.min, 0);
   const loggedToday = live(log.value?.sessions).filter((s) => s.e && toLocal(s.s, tz).slice(0, 10) === today).reduce((a, s) => a + (Date.parse(s.e) - Date.parse(s.s)) / 6e4, 0);
@@ -48,22 +47,22 @@ export function TodayBlock() {
           <span>{rest.length ? `${rest.length} thing${rest.length > 1 ? 's' : ''} left · ${fmtMin(loggedToday) || '0m'} done` : 'Nothing left today'}</span>
         </div>
       </div>
-      {events.map((t) => <TaskRow t={t} why="event" />)}
+      {events.map((t) => <TaskRow key={t.id} t={t} why="event" />)}
       {overdue.length > 0 && <div class="groupHead" style={{ color: 'var(--red)' }}>Overdue</div>}
-      <div class="rows">{overdue.map((i) => <TaskRow t={T[i.id]} why="overdue" />)}</div>
+      <div class="rows">{overdue.map((i) => <TaskRow key={i.id} t={T[i.id]} why="overdue" />)}</div>
       {overdue.length > 0 && rest.length > 0 && <div class="groupHead">Today</div>}
-      <div class="rows">{rest.map((i) => <TaskRow t={T[i.id]} min={i.min} why={i.why} />)}</div>
+      <div class="rows">{rest.map((i) => <TaskRow key={i.id} t={T[i.id]} min={i.min} why={i.why} />)}</div>
       {!items.length && <Empty>{doneToday.length ? 'All done for today.' : 'Clear day. Drag something here to plan it.'}</Empty>}
       {tomorrow.length > 0 && items.length < 3 && (
         <>
           <div class="groupHead">Get ahead <span class="sub">tomorrow's plan</span></div>
-          <div class="rows">{tomorrow.map((i) => <TaskRow t={T[i.id]} min={i.min} why="ahead" />)}</div>
+          <div class="rows">{tomorrow.map((i) => <TaskRow key={i.id} t={T[i.id]} min={i.min} why="ahead" />)}</div>
         </>
       )}
       {doneToday.length > 0 && (
         <button class="more" onClick={() => setShowDone(!showDone)}>{showDone ? 'Hide' : `${doneToday.length} done today`}</button>
       )}
-      {showDone && <div class="rows">{doneToday.map((t) => <TaskRow t={t} compact />)}</div>}
+      {showDone && <div class="rows">{doneToday.map((t) => <TaskRow key={t.id} t={t} compact />)}</div>}
     </div>
   );
 }
@@ -101,7 +100,7 @@ export function UpcomingBlock({ cfg }) {
       <Strip today={today} onPick={(d) => { setJump(d); document.getElementById(`day-${d}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }} />
       <div class="filters">
         {live(db.value?.courses).filter((c) => c.include !== false).map((c) => (
-          <button class={`fchip${filter.includes(c.id) ? ' on' : ''}`} style={{ '--c': c.color }} onClick={() => setCfg({ filter: filter.includes(c.id) ? filter.filter((x) => x !== c.id) : [...filter, c.id] })}>
+          <button key={c.id} class={`fchip${filter.includes(c.id) ? ' on' : ''}`} style={{ '--c': c.color }} onClick={() => setCfg({ filter: filter.includes(c.id) ? filter.filter((x) => x !== c.id) : [...filter, c.id] })}>
             <span class="swatch" style={{ background: c.color, width: 7, height: 7 }} />{courseShort(c.id)}
           </button>
         ))}
@@ -110,19 +109,19 @@ export function UpcomingBlock({ cfg }) {
       {groups.has('past') && (
         <div class="group">
           <div class="groupHead" style={{ color: 'var(--red)' }}>Past due</div>
-          <div class="rows">{groups.get('past').map((t) => <TaskRow t={t} />)}</div>
+          <div class="rows">{groups.get('past').map((t) => <TaskRow key={t.id} t={t} />)}</div>
         </div>
       )}
       {[...groups.entries()].filter(([d]) => d !== 'past').map(([d, items]) => {
         const load = loadOf(items), cap = capOf(d);
         return (
-          <div class="group" id={`day-${d}`} style={jump === d ? { background: 'var(--bg-soft)', borderRadius: 8 } : null}>
+          <div key={d} class="group" id={`day-${d}`} style={jump === d ? { background: 'var(--bg-soft)', borderRadius: 8 } : null}>
             <div class="groupHead">
               <span>{fmtDay(d, today)}</span>
               {daysBetween(today, d) >= 2 && daysBetween(today, d) < 7 && <span class="sub">{fmtDay(d)}</span>}
               {load > 0 && <span class="load" title={`${fmtMin(load)} due`}><i style={{ width: `${Math.min(100, (100 * load) / cap)}%`, background: color(load / cap) }} /></span>}
             </div>
-            <div class="rows">{items.map((t) => <TaskRow t={t} />)}</div>
+            <div class="rows">{items.map((t) => <TaskRow key={t.id} t={t} />)}</div>
           </div>
         );
       })}
@@ -131,7 +130,7 @@ export function UpcomingBlock({ cfg }) {
       {undated.length > 0 && (
         <div class="group">
           <div class="groupHead">No date</div>
-          <div class="rows">{undated.map((t) => <TaskRow t={t} />)}</div>
+          <div class="rows">{undated.map((t) => <TaskRow key={t.id} t={t} />)}</div>
         </div>
       )}
     </div>
@@ -149,7 +148,7 @@ function Strip({ today, onPick }) {
     const due = live(T).filter((t) => !t.done && t.due && dayOf(t.due) === d).length;
     cells.push({ d, planned, cap, due });
   }
-  return <div class="strip">{cells.map((c) => <StripCell c={c} today={today} onPick={onPick} />)}</div>;
+  return <div class="strip">{cells.map((c) => <StripCell key={c.d} c={c} today={today} onPick={onPick} />)}</div>;
 }
 
 function StripCell({ c, today, onPick }) {
@@ -196,7 +195,7 @@ export function ClassesBlock({ cfg }) {
   }, [lib]);
 
   const ql = q.trim().toLowerCase();
-  const hits = ql ? flat.filter((n) => n.k !== 'module' && `${n.t} ${n.path.join(' ')}`.toLowerCase().includes(ql)).slice(0, 40) : [];
+  const hits = ql ? searchTree(flat, ql, (c) => courseShort(c) + ' ' + (courses.value[c]?.name || '') + ' ' + (courses.value[c]?.aliases || []).join(' ')) : [];
   const newest = flat.filter((n) => n.k !== 'module' && fresh(n.n)).slice(0, 8);
   const pinned = flat.filter((n) => pins.includes(`${n.course}:${n.id}`));
   const togglePin = (n) => { const k = `${n.course}:${n.id}`; setCfg({ pins: pins.includes(k) ? pins.filter((x) => x !== k) : [...pins, k] }); };
@@ -209,11 +208,11 @@ export function ClassesBlock({ cfg }) {
         {q && <button class="iconBtn" onClick={() => setQ('')}><Icon n="x" size={12} /></button>}
       </div>
       {ql ? (
-        hits.length ? hits.map((n) => <Leaf n={n} hl={ql} showPath pinned={pins.includes(`${n.course}:${n.id}`)} onPin={togglePin} />) : <Empty>No matches.</Empty>
+        hits.length ? hits.map((n) => <Leaf key={n.course + n.id} n={n} hl={ql} showPath pinned={pins.includes(`${n.course}:${n.id}`)} onPin={togglePin} />) : <Empty>No matches.</Empty>
       ) : (
         <>
-          {pinned.length > 0 && <><div class="groupHead">Pinned</div>{pinned.map((n) => <Leaf n={n} showPath pinned onPin={togglePin} />)}</>}
-          {newest.length > 0 && <><div class="groupHead">New this week</div>{newest.map((n) => <Leaf n={n} showPath fresh onPin={togglePin} />)}</>}
+          {pinned.length > 0 && <><div class="groupHead">Pinned</div>{pinned.map((n) => <Leaf key={n.course + n.id} n={n} showPath pinned onPin={togglePin} />)}</>}
+          {newest.length > 0 && <><div class="groupHead">New this week</div>{newest.map((n) => <Leaf key={n.course + n.id} n={n} showPath fresh onPin={togglePin} />)}</>}
           {(pinned.length > 0 || newest.length > 0) && <div class="groupHead">Courses</div>}
           {[...byCourse.entries()].map(([cid, parts]) => {
             const grades = parts.flatMap((p) => p.grades || []);
@@ -221,7 +220,7 @@ export function ClassesBlock({ cfg }) {
             const nextDue = live(tasks.value).filter((t) => t.course === cid && !t.done && t.due && t.due >= today).sort(byDue)[0];
             const isOpen = open[cid];
             return (
-              <div class="courseCard">
+              <div key={cid} class="courseCard">
                 <div class="courseHead" onClick={() => setOpen({ ...open, [cid]: !isOpen })}>
                   <Icon n="right" size={12} style={{ color: 'var(--text-3)', transform: isOpen ? 'rotate(90deg)' : '', transition: 'transform .15s' }} />
                   <span class="swatch" style={{ background: courseColor(cid) }} />
@@ -232,7 +231,7 @@ export function ClassesBlock({ cfg }) {
                   <div class="tree">
                     {nextDue && <div class="path" style={{ padding: '0 6px 6px' }}>Next: {nextDue.title} · {fmtDay(dayOf(nextDue.due), today)}</div>}
                     {grades.length > 0 && <Grades grades={grades} />}
-                    {parts.map((p) => (p.tree || []).map((n) => <Branch n={n} course={cid} fresh={fresh} pins={pins} onPin={togglePin} />))}
+                    {parts.map((p) => (p.tree || []).map((n) => <Branch key={p.ou + n.id} n={n} course={cid} fresh={fresh} pins={pins} onPin={togglePin} />))}
                   </div>
                 )}
               </div>
@@ -276,13 +275,13 @@ function Branch({ n, course, fresh, pins, onPin, depth = 0 }) {
         <span class="nm">{n.t}</span>
         {hasNew(n) && <span class="new" />}
       </div>
-      {open && <div class="kids">{(n.c || []).map((x) => <Branch n={x} course={course} fresh={fresh} pins={pins} onPin={onPin} depth={depth + 1} />)}{!(n.c || []).length && <div class="path" style={{ padding: '4px 6px' }}>Empty</div>}</div>}
+      {open && <div class="kids">{(n.c || []).map((x) => <Branch key={x.id} n={x} course={course} fresh={fresh} pins={pins} onPin={onPin} depth={depth + 1} />)}{!(n.c || []).length && <div class="path" style={{ padding: '4px 6px' }}>Empty</div>}</div>}
     </div>
   );
 }
 
 function Leaf({ n, hl, showPath, fresh, pinned, onPin }) {
-  const name = hl ? highlight(n.t, hl) : n.t;
+  const name = hl ? highlight(n.t, hl.split(/\s+/).sort((a, b) => b.length - a.length)[0]) : n.t;
   return (
     <div class="node" role="link" tabIndex={0} onClick={() => window.open(n.u, '_blank', 'noopener')} onKeyDown={(e) => e.key === 'Enter' && window.open(n.u, '_blank', 'noopener')}>
       <span class="ic"><Icon n={KIND_ICON[n.k] || 'file'} size={14} /></span>
@@ -295,6 +294,31 @@ function Leaf({ n, hl, showPath, fresh, pinned, onPin }) {
       <button class="act iconBtn" style={pinned ? { opacity: 1, color: 'var(--yellow)' } : null} title={pinned ? 'Unpin' : 'Pin'} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPin(n); }}><Icon n="star" size={13} /></button>
     </div>
   );
+}
+
+// "physics recitation 4" finds "PHYS 172 › RECITATION 04 › …". Text is split into words and
+// numbers ("MA261_Lesson26" → ma 261 lesson 26); numbers must match exactly (4 = 04, not
+// 04:35 or 261); words may be abbreviations either way (rec ↔ recitation, phys ↔ physics).
+// Every query word must match the item, its folders or its course; title matches rank first.
+// Durations like (04:35) are not numbers to match.
+const toks = (x) => (x.toLowerCase().replace(/\d{1,2}:\d{2}(:\d{2})?/g, ' ').match(/[a-z]+|\d+/g) || []).map((t) => (/^\d+$/.test(t) ? String(+t) : t));
+const hit = (w, ts) => ts.some((t) => (/^\d/.test(w) ? t === w : t === w || (w.length >= 3 && t.startsWith(w)) || (t.length >= 3 && w.startsWith(t))));
+function searchTree(flat, q, courseWords) {
+  const words = toks(q);
+  const out = [];
+  for (const n of flat) {
+    if (n.k === 'module') continue;
+    const tt = toks(n.t), pt = toks(n.path.join(' ')), ct = toks(courseWords(n.course));
+    let score = 0;
+    for (const w of words) {
+      if (hit(w, tt)) score += 10;
+      else if (hit(w, pt)) score += 4;
+      else if (hit(w, ct)) score += 2;
+      else { score = -1; break; }
+    }
+    if (score > 0) out.push({ n, score: score - n.path.length * 0.1 + (n.k === 'file' ? 0.5 : 0) });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, 40).map((x) => x.n);
 }
 
 function highlight(text, q) {
@@ -344,10 +368,11 @@ export function HealthBlock() {
   const [focus, setFocus] = useState('');
   const s = settings.value;
   const syncs = live(log.value?.syncs).filter((x) => x.kind !== 'migration').sort((a, b) => (a.at < b.at ? 1 : -1));
-  const last = syncs[0];
+  const last = syncs.find((x) => x.kind !== 'mylab');
+  const lastMyLab = syncs.find((x) => x.mylab);
   const report = db.value?.reports?.latest;
   const F = findings.value;
-  const claude = conn.value.claude?.state;
+  const claude = conn.value.claude?.state || s.claude;
   const fixFor = (f) => {
     if (f.fix?.op === 'merge') return [{ label: 'Merge', run: () => runOps([f.fix]) }];
     if (f.fix?.op === 'update') return [{ label: 'Use theirs', run: () => runOps([f.fix]) }];
@@ -356,45 +381,66 @@ export function HealthBlock() {
   };
   const pendingCheck = live(db.value?.inbox).find((r) => r.type === 'check' && (r.status === 'new' || r.status === 'working'));
   const syncDot = !last ? 'idle' : last.ok && !last.errors?.length ? 'ok' : last.errors?.some((e) => /signed-out/.test(e)) ? 'err' : 'warn';
+  const requested = s.syncRequest && (!s.lastSync || s.syncRequest > s.lastSync) && Date.now() - Date.parse(s.syncRequest) < 6 * 36e5 ? s.syncRequest : null;
+  const extSeen = [conn.value.ext, s.extSeen].filter(Boolean).sort().pop();
+  const extAlive = extSeen && Date.now() - Date.parse(extSeen) < 45 * 60e3;
+  // Items already acted on, or about tasks that are now done or gone, drop off the report.
+  const items = (report?.items || []).filter((it, i) => it.level !== 'ok' && !(report.applied || []).includes(i)
+    && !(it.taskIds?.length && it.taskIds.every((id) => !tasks.value[id] || tasks.value[id].deleted || tasks.value[id].done)));
 
   return (
     <div>
       <div class="status">
         <div class="statusRow">
-          <span class={`dot ${syncDot}`} />
-          <span class="lbl">Brightspace {last ? `synced ${relTime(last.at)}` : 'not synced yet'}
-            <small>{last ? summarize(last) : `Runs at ${s.syncTimes.join(' and ')} while the Mac is in use.`}</small>
+          <span class={`dot ${requested ? 'idle' : syncDot}`} />
+          <span class="lbl">{requested ? 'Sync requested' : `Brightspace ${last ? `synced ${relTime(last.at)}` : 'not synced yet'}`}
+            <small>{requested ? (extAlive ? 'Starting within a minute…' : 'Waiting for the Safari extension on the Mac.') : last ? summarize(last) : `Runs at ${s.syncTimes.join(' and ')} while the Mac is in use.`}</small>
           </span>
           <button class="iconBtn" title="Sync now" onClick={requestSync}><Icon n="sync" size={15} /></button>
         </div>
+        {lastMyLab && (
+          <div class="statusRow">
+            <span class={`dot ${lastMyLab.mylab.ok ? 'ok' : 'warn'}`} />
+            <span class="lbl">MyLab {lastMyLab.mylab.ok ? `read ${relTime(lastMyLab.at)}` : 'skipped last time'}
+              <small>{lastMyLab.mylab.ok ? `${lastMyLab.mylab.n} assignments` : lastMyLab.mylab.error || 'Could not open MyLab'}</small>
+            </span>
+          </div>
+        )}
+        <div class="statusRow">
+          <span class={`dot ${extAlive ? 'ok' : 'warn'}`} />
+          <span class="lbl">Safari extension {extAlive ? 'connected' : extSeen ? `last seen ${relTime(extSeen)}` : 'not connected'}
+            {!extAlive && <small>Safari › Settings › Extensions › tick Load, then allow it on all websites.</small>}
+          </span>
+        </div>
         <div class="statusRow">
           <span class={`dot ${claude === 'ok' ? 'ok' : claude === 'needs-login' ? 'warn' : 'idle'}`} />
-          <span class="lbl">Assistant {claude === 'ok' ? 'ready' : claude === 'needs-login' ? 'needs sign-in on the Mac' : conn.value.mode === 'hub' ? 'starting' : 'on the Mac'}
+          <span class="lbl">Assistant {claude === 'ok' ? 'ready' : claude === 'needs-login' ? 'needs sign-in on the Mac' : 'answers when the Mac is awake'}
             {claude === 'needs-login' && <small>Open Terminal, run <code>claude</code>, sign in once.</small>}
           </span>
         </div>
       </div>
 
       {report?.summary && <div class="summary">{report.summary}<div class="path" style={{ marginTop: 4 }}>Checked {relTime(report.at)}{report.focus ? ` · ${report.focus}` : ''}</div></div>}
-      {(report?.items || []).filter((i) => i.level !== 'ok').map((it) => (
-        <div class="finding">
+      {items.map((it) => (
+        <div key={it.text} class="finding">
           <span class={`dot ${it.level === 'warn' || it.level === 'action' ? 'warn' : 'idle'}`} style={{ marginTop: 6 }} />
-          <div class="ft">{it.text}{it.taskIds?.length ? <small>{it.taskIds.map((id) => tasks.value[id]?.title).filter(Boolean).join(' · ')}</small> : null}</div>
+          <div class="ft">{it.text}{it.taskIds?.length ? <small>{names(it.taskIds)}</small> : null}</div>
           <div class="fx">
-            {it.ops?.length > 0 && <button class="mini" title={it.ops.map((o) => describeOp(o, tasks.value)).join('\n')} onClick={() => runOps(it.ops)}>Apply</button>}
+            {it.ops?.length > 0 && <button class="mini" title={it.ops.map((o) => describeOp(o, tasks.value)).join('\n')} onClick={() => { runOps(it.ops); markReportItem(report.items.indexOf(it)); }}>Apply</button>}
+            <button class="mini" title="Dismiss" onClick={() => markReportItem(report.items.indexOf(it))}><Icon n="x" size={10} /></button>
             {it.taskIds?.length === 1 && <button class="mini" onClick={() => openPeek(it.taskIds[0])}>Open</button>}
           </div>
         </div>
       ))}
 
       {F.filter((f) => f.level !== 'review').map((f) => (
-        <div class="finding">
+        <div key={f.id} class="finding">
           <span class={`dot ${f.level === 'error' ? 'err' : f.level === 'warn' ? 'warn' : 'idle'}`} style={{ marginTop: 6 }} />
-          <div class="ft">{f.text}{f.taskIds?.length > 1 && f.id !== 'overdue' && f.id !== 'missing' && f.id !== 'undated' ? null : f.taskIds?.length ? <small>{f.taskIds.slice(0, 4).map((id) => tasks.value[id]?.title).join(' · ')}{f.taskIds.length > 4 ? ` +${f.taskIds.length - 4}` : ''}</small> : null}</div>
+          <div class="ft">{f.text}{f.taskIds?.length && !f.id.startsWith('dup-') && !f.id.startsWith('conflict-') ? <small>{names(f.taskIds)}</small> : null}</div>
           <div class="fx">{fixFor(f).map((b) => <button class="mini" onClick={b.run}>{b.label}</button>)}</div>
         </div>
       ))}
-      {!F.length && !report?.items?.length && <div class="finding"><span class="dot ok" style={{ marginTop: 6 }} /><div class="ft">Everything looks right.</div></div>}
+      {!F.length && !items.length && <div class="finding"><span class="dot ok" style={{ marginTop: 6 }} /><div class="ft">Everything looks right.</div></div>}
 
       <div class="checkRow">
         <input value={focus} placeholder="Look into something specific…" onInput={(e) => setFocus(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { ask(focus.trim() || 'Routine check', 'check'); setFocus(''); } }} />
@@ -402,6 +448,11 @@ export function HealthBlock() {
       </div>
     </div>
   );
+}
+
+function names(ids, n = 3) {
+  const t = ids.map((id) => tasks.value[id]).filter((x) => x && !x.deleted).map((x) => x.title);
+  return t.slice(0, n).join(' · ') + (t.length > n ? ` +${t.length - n} more` : '');
 }
 
 function summarize(s) {
@@ -431,7 +482,7 @@ export function NewsBlock({ cfg }) {
     <div>
       {unread > 0 && <button class="more" onClick={() => setLayout('news', { ...(cfg || {}), seen: toLocal(new Date(), tz) })}>Mark {unread} as read</button>}
       {items.map((n) => (
-        <div class={`news${open === n.id ? ' open' : ''}`} onClick={() => setOpen(open === n.id ? null : n.id)}>
+        <div key={n.id} class={`news${open === n.id ? ' open' : ''}`} onClick={() => setOpen(open === n.id ? null : n.id)}>
           <h4>{(n.at || '') > seen && <span class="new dot" style={{ background: 'var(--accent)', width: 6, height: 6 }} />}<CoursePill id={n.course} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.title}</span><span class="when">{n.at ? fmtDay(n.at.slice(0, 10), today) : ''}</span></h4>
           <p>{n.body.replace(/&#(\d+);/g, (m, c) => String.fromCharCode(+c)).replace(/&gt;/g, '>').replace(/&lt;/g, '<')}</p>
         </div>

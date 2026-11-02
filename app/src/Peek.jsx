@@ -13,17 +13,38 @@ function useEsc(fn) {
   }, [fn]);
 }
 
+/**
+ * Text that saves itself: shortly after you stop typing, on blur, and when the panel
+ * closes (Esc or the scrim), so nothing typed is ever dropped.
+ */
 function AutoText({ value, onCommit, class: cls, placeholder }) {
   const [v, setV] = useState(value || '');
   const ref = useRef();
-  useEffect(() => setV(value || ''), [value]);
+  const pending = useRef(null);
+  const saveTimer = useRef(null);
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+  const flush = () => {
+    if (pending.current == null) return;
+    const next = pending.current;
+    pending.current = null;
+    clearTimeout(saveTimer.current);
+    commitRef.current(next);
+  };
+  useEffect(() => { if (pending.current == null) setV(value || ''); }, [value]);
+  useEffect(() => () => flush(), []);
   const fit = () => { const el = ref.current; if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; } };
   useEffect(fit, [v]);
   return (
     <textarea
       ref={ref} class={cls} rows={1} value={v} placeholder={placeholder}
-      onInput={(e) => setV(e.target.value)}
-      onBlur={() => v !== (value || '') && onCommit(v)}
+      onInput={(e) => {
+        setV(e.target.value);
+        pending.current = e.target.value === (value || '') ? null : e.target.value;
+        clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(flush, 900);
+      }}
+      onBlur={flush}
       onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && cls === 'peekTitle') { e.preventDefault(); e.target.blur(); } }}
     />
   );
@@ -138,7 +159,7 @@ export function Peek() {
 
           <div class="sect">Checklist</div>
           {cl.map((it, i) => (
-            <div class="cl">
+            <div key={it.id || i} class="cl">
               <button class={`check${it.done ? ' on' : ''}`} style={{ '--c': courseColor(t.course), width: 16, height: 16 }} onClick={() => setCl(cl.map((x, j) => (j === i ? { ...x, done: !x.done } : x)))}>
                 {it.done && <Icon n="check" size={10} sw={2.6} />}
               </button>

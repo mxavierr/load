@@ -35,7 +35,8 @@ export const timer = computed(() => (db.value?.timer?.main?.task ? db.value.time
 
 // ---------- connection ----------
 
-const isLocal = ['127.0.0.1', 'localhost'].includes(location.hostname);
+// ?remote on the Mac forces the phone's path (GitHub mode); used for testing.
+const isLocal = ['127.0.0.1', 'localhost'].includes(location.hostname) && !new URLSearchParams(location.search).has('remote');
 
 export function githubCreds() {
   try {
@@ -61,7 +62,7 @@ export async function connect() {
         repo = j.repo;
         base = './gh';
         fetchFn = (u, o = {}) => fetch(u, { ...o, headers: { ...(o.headers || {}), 'X-Load': '1' } });
-        conn.value = { ...conn.value, mode: 'hub', claude: j.claude };
+        conn.value = { ...conn.value, mode: 'hub', claude: j.claude, ext: j.ext };
       }
     } catch { /* fall through */ }
   }
@@ -73,7 +74,7 @@ export async function connect() {
     }
     repo = c.repo || 'mxavierr/load-data';
     token = c.token;
-    base = 'https://api.github.com';
+    base = c.api || 'https://api.github.com';
     conn.value = { ...conn.value, mode: 'github' };
   }
   files = {};
@@ -87,7 +88,7 @@ export async function connect() {
     } catch { /* ignore */ }
   }
   await pullAll();
-  setInterval(() => { if (document.visibilityState === 'visible') pullAll(); }, hubMode ? 10e3 : 25e3);
+  setInterval(() => { if (document.visibilityState === 'visible') pullAll(); }, hubMode ? 12e3 : 25e3);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pullAll(); });
   if (hubMode) setInterval(pingHub, 60e3);
 }
@@ -95,16 +96,23 @@ export async function connect() {
 async function pingHub() {
   try {
     const j = await (await fetch('./api/ping', { headers: { 'X-Load': '1' } })).json();
-    conn.value = { ...conn.value, claude: j.claude };
+    conn.value = { ...conn.value, claude: j.claude, ext: j.ext };
   } catch { /* hub restarting */ }
 }
 
 let pulling = false;
+let librarySync = null;
 export async function pullAll() {
   if (!files || pulling) return;
   pulling = true;
   try {
     for (const k of Object.keys(FILES)) {
+      // The course library only changes when a sync runs; skip it otherwise.
+      if (k === 'library') {
+        const ls = db.value?.settings?.main?.lastSync || null;
+        if (library.value && ls === librarySync) continue;
+        librarySync = ls;
+      }
       const f = files[k];
       const { changed, dirty } = await f.pull();
       if (changed || !SIGNALS[k].value) {
@@ -272,6 +280,14 @@ export function ask(text, type = 'ask') {
 export function closeRequest(id, status) {
   change('db', (d) => ({ ...d, inbox: { ...d.inbox, [id]: stamp(d.inbox[id], { status }) } }));
   if (ui.value.answer === id) ui.value = { ...ui.value, answer: null };
+}
+
+export function markReportItem(i) {
+  change('db', (d) => {
+    const r = d.reports?.latest;
+    if (!r) return d;
+    return { ...d, reports: { ...d.reports, latest: stamp(r, { applied: [...new Set([...(r.applied || []), i])] }) } };
+  });
 }
 
 export function requestSync() {

@@ -52,7 +52,7 @@ function Top() {
         </div>
         <div class="spacer" />
         {T && <TimerChip T={T} />}
-        <button class="chipBtn" title={c.error === 'offline' ? 'Offline. Changes will sync when back.' : c.saving ? 'Saving' : 'Saved'} onClick={() => document.getElementById('b-health')?.scrollIntoView({ behavior: 'smooth' })}>
+        <button class="chipBtn" title={c.error === 'offline' ? 'Offline. Changes will sync when back.' : c.saving ? 'Saving' : 'Saved'} onClick={() => (c.error === 'auth' ? (conn.value = { ...conn.value, mode: 'setup' }) : document.getElementById('b-health')?.scrollIntoView({ behavior: 'smooth' }))}>
           <span class={`dot ${c.error ? 'err' : warn ? 'warn' : c.saving ? 'idle' : 'ok'}`} />
           <span class="dateSub">{c.error === 'offline' ? 'Offline' : c.error === 'auth' ? 'Sign in again' : c.saving ? 'Saving…' : 'Up to date'}</span>
         </button>
@@ -85,7 +85,9 @@ function TimerChip({ T }) {
 function Board() {
   const device = isPhone() ? 'mobile' : 'desktop';
   const L = db.value.layout?.[device] || {};
-  const order = [...(L.order || DEFAULT_ORDER).filter((k) => BLOCKS[k]), ...DEFAULT_ORDER.filter((k) => !(L.order || []).includes(k))];
+  // Saved order first, then any block it does not mention yet; a Set also repairs layouts
+  // saved with duplicates by an earlier version.
+  const order = [...new Set([...(L.order || []).filter((k) => BLOCKS[k]), ...DEFAULT_ORDER])];
   const spans = L.spans || {};
   const collapsed = L.collapsed || {};
   const [drag, setDrag] = useState(null);
@@ -219,14 +221,14 @@ function Settings() {
 
 function Setup() {
   const [token, setToken] = useState('');
-  const [repo, setRepo] = useState('mxavierr/load-data');
+  const [repo, setRepo] = useState(githubCreds()?.repo || 'mxavierr/load-data');
   return (
     <div class="setup">
       <h1>Load</h1>
       <p>Connect this device to your task data. Paste a GitHub fine-grained token that can read and write only the <b>{repo}</b> repository.</p>
       <div class="field"><label>Token</label><input type="password" value={token} onInput={(e) => setToken(e.target.value)} autocomplete="off" placeholder="github_pat_…" /></div>
       <div class="field"><label>Data repository</label><input value={repo} onInput={(e) => setRepo(e.target.value)} /></div>
-      <button class="btn primary" disabled={!token.trim()} onClick={() => { setGithubCreds({ token: token.trim(), repo: repo.trim() }); location.reload(); }}>Connect</button>
+      <button class="btn primary" disabled={!token.trim()} onClick={() => { setGithubCreds({ ...(githubCreds() || {}), token: token.trim(), repo: repo.trim() }); location.reload(); }}>Connect</button>
       <p style={{ fontSize: 12.5, marginTop: 18 }}>The token stays on this device. github.com › Settings › Developer settings › Fine-grained tokens › only this repository › Contents: read and write.</p>
     </div>
   );

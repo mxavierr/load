@@ -38,3 +38,19 @@ Replaces `../fall26-load-local`. Read README.md for the layout.
   viewed for files and links; for LTI (WileyPLUS) it only means opened.
 - MyLab: topic 21938619's quickLink → console.pearson.com → navigate the same tab to
   `mylab.pearson.com/api/v1/courses/14285764/links/assignments/launch` → DoAssignments.
+
+## Testing
+
+- `npm test`: unit tests. They cover saving from two devices, the planner, quick add,
+  edits and locks, sync safety, the checks, and the extension's scheduling, matching and
+  sessions. Reconcile tests also run against captured Brightspace data when
+  `fixtures/` exists.
+- **Never test against the live data.** For a throwaway hub, run
+  `LOAD_HOME=<scratch dir> node hub/server.mjs` with a `config.json` containing
+  `{"mode":"local","port":8799,"repo":"test/load-data"}` and a copy of the data in
+  `<scratch>/data`.
+- Phone path without a real token: open `http://127.0.0.1:8799/?remote` and set
+  localStorage `load:v1:gh` to `{token, repo, api}`, where `api` points at a local fake
+  contents API.
+- Extension end to end: `node tests/ext-harness.mjs <hub url> fixtures/snap-live.json fixtures/mylab-snap.json`
+  runs the built `extension/dist/background.js` against a simulated Safari API.

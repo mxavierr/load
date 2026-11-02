@@ -7,7 +7,14 @@ import { classify } from './model.js';
 
 const DAYS = { sun: 0, sunday: 0, mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2, wed: 3, weds: 3, wednesday: 3, thu: 4, thur: 4, thurs: 4, thursday: 4, fri: 5, friday: 5, sat: 6, saturday: 6 };
 const MONTHS = { jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12 };
-const COMMAND_RE = /^(move|push|pull|shift|delete|remove|mark|change|set|split|rename|reschedule|postpone|clear|show|find|what|when|how|why|which|can|could|should|is|are|do|does|make|plan|break|merge|undo|tick|untick|check|uncheck|update|swap|combine)\b|\b(all|every|each)\b.*\b(to|by|later|earlier)\b|\?$/i;
+// A request to change existing tasks, or a question, rather than a new task. Verbs that
+// are also everyday tasks ("check grades", "make flashcards", "do pset 4") only count
+// when they clearly point at existing tasks.
+const QUESTION_RE = /\?\s*$|^(what|what's|whats|when|how|why|which|who|where)\b|^(can|could|should|would|will|is|are|do|does|did|am|have|has)\s+(i|you|we|my|there|it|this|that|anything|everything)\b/i;
+const EDIT_VERB_RE = /^(move|push|pull|shift|delete|remove|rename|reschedule|postpone|delay|untick|uncheck|merge|combine|swap|undo|clear|reorder)\b/i;
+const BULK_RE = /\b(all|every|each|everything|anything)\b.*\b(to|by|later|earlier|as|done|due)\b|\b(my|the)\s+(tasks|labs|homeworks?|quizzes|lessons|assignments|deadlines|due dates)\b/i;
+const MARK_RE = /^(mark|tick|check off|set|change|split|break up|plan)\b.*\b(as|to|into|for|done|complete|finished)\b/i;
+export const isCommand = (t) => QUESTION_RE.test(t) || EDIT_VERB_RE.test(t) || BULK_RE.test(t) || MARK_RE.test(t);
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -20,7 +27,7 @@ export function parseQuick(input, { courses = [], tz, now = new Date() } = {}) {
   const text = input.trim();
   const out = { title: '', course: null, due: null, est: null, kind: null, pri: 0, command: false, chips: [] };
   if (!text) return out;
-  if (COMMAND_RE.test(text)) out.command = true;
+  if (isCommand(text)) out.command = true;
 
   let s = ' ' + text + ' ';
   const take = (re, fn) => {
@@ -86,6 +93,12 @@ export function parseQuick(input, { courses = [], tz, now = new Date() } = {}) {
   if (best) {
     out.course = best.id;
     s = s.replace(best.re, ' ');
+    // "ma 261 hw" names the course twice; drop the other spellings too.
+    const c = courses.find((x) => x.id === best.id);
+    for (const a of [c.id.toLowerCase(), ...(c.aliases || [])]) {
+      const re = new RegExp(`\\s(${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?=\\s)`, 'gi');
+      s = s.replace(re, ' ');
+    }
     out.chips.push({ k: 'course', v: best.id });
   }
 

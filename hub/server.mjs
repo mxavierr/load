@@ -20,7 +20,7 @@ import { DEFAULT_SETTINGS } from '../shared/model.js';
 import { parseQuick } from '../shared/quickadd.js';
 import { newTask } from '../shared/ops.js';
 import { makePlan } from '../shared/plan.js';
-import { today as todayFn, toLocal, nowLocal } from '../shared/time.js';
+import { today as todayFn, toLocal, nowLocal, asLocal } from '../shared/time.js';
 import { runChecks } from '../shared/checks.js';
 import { assist, review } from './brain.mjs';
 import { claudeStatus, probeClaude } from './claude.mjs';
@@ -28,7 +28,7 @@ import { localGitHub } from './localgh.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(HERE, '../app/dist');
-const HOME = path.join(os.homedir(), 'Library/Application Support/Load');
+const HOME = process.env.LOAD_HOME || path.join(os.homedir(), 'Library/Application Support/Load');
 const CONFIG = path.join(HOME, 'config.json');
 fs.mkdirSync(path.join(HOME, 'backups'), { recursive: true });
 
@@ -173,6 +173,7 @@ async function runReview({ focus, auto = false, push = true } = {}) {
       r.error = claudeStatus().state === 'needs-login' ? 'needs-login' : e.message.slice(0, 160);
     }
     r.findingIds = r.findings.map((f) => f.id).sort().join(',');
+    r.applied = []; // a fresh report starts with nothing dismissed
     await exclusive(async () => {
       await files.db.pull();
       await files.db.push({ ...files.db.doc, reports: { ...(files.db.doc.reports || {}), latest: stamp(files.db.doc.reports?.latest, { id: 'latest', ...r }) } }, 'review');
@@ -185,6 +186,21 @@ async function runReview({ focus, auto = false, push = true } = {}) {
 
 // ---------- extension endpoints ----------
 
+// When the extension last checked in, so the app (on any device) can tell whether
+// syncing and time tracking are actually alive. Saved at most every 20 minutes.
+let extSeen = 0;
+function noteExtension(version) {
+  const prev = extSeen;
+  extSeen = Date.now();
+  const saved = Date.parse(files.db.doc?.settings?.main?.extSeen || 0) || 0;
+  if (extSeen - saved < 20 * 60e3 && prev) return;
+  exclusive(async () => {
+    await files.db.pull();
+    const main = files.db.doc.settings?.main;
+    await files.db.push({ ...files.db.doc, settings: { ...files.db.doc.settings, main: stamp(main, { extSeen: new Date(extSeen).toISOString(), extVersion: version || undefined }) } }, 'extension seen');
+  }).catch((e) => log('extSeen', e.message));
+}
+
 function extState() {
   const s = settings();
   const db = files.db.doc || {};
@@ -192,7 +208,7 @@ function extState() {
   // URL fingerprints the extension can match the current tab against.
   const index = [];
   for (const t of tasks) {
-    if (t.done && t.doneAt && t.doneAt < `${todayFn(s.tz)}`.slice(0, 10)) continue;
+    if (t.done && (asLocal(t.doneAt, s.tz) || '0') < todayFn(s.tz)) continue;
     const keys = new Set();
     for (const r of [t.id, ...(t.refs || [])]) {
       const p = r.split(':');
@@ -266,8 +282,13 @@ async function quickAdd(text, extra = {}) {
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon' };
 
+// The Safari extension calls from its own origin. Answer it (and only it) with CORS
+// headers, so a preflight for the X-Load header cannot block a sync.
+const EXT_ORIGIN = /^(safari-web-extension|chrome-extension|moz-extension):\/\//;
 function send(res, code, body, type = 'application/json') {
-  res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+  const h = { 'Content-Type': type, 'Cache-Control': 'no-store' };
+  if (res.corsOrigin) Object.assign(h, { 'Access-Control-Allow-Origin': res.corsOrigin, Vary: 'Origin' });
+  res.writeHead(code, h);
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
 
@@ -281,7 +302,7 @@ async function readBody(req) {
 async function proxyGitHub(req, res, rest) {
   // Only the data repo's contents, nothing else on your account.
   if (!rest.startsWith(`/repos/${config.repo}/contents/`)) return send(res, 403, { error: 'not allowed' });
-  const headers = { Accept: 'application/vnd.github+json' };
+  const headers = { Accept: req.headers.accept?.includes('github.raw') ? 'application/vnd.github.raw' : 'application/vnd.github+json' };
   if (req.headers['if-none-match']) headers['If-None-Match'] = req.headers['if-none-match'];
   let body;
   if (req.method === 'PUT') { headers['Content-Type'] = 'application/json'; body = JSON.stringify(await readBody(req)); }
@@ -304,15 +325,25 @@ function serveStatic(req, res, p) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
+  const corsOrigin = (res.corsOrigin = EXT_ORIGIN.test(req.headers.origin || '') ? req.headers.origin : null);
   try {
+    if (req.method === 'OPTIONS') {
+      if (!corsOrigin) return send(res, 403, { error: 'no' });
+      res.writeHead(204, { 'Access-Control-Allow-Origin': corsOrigin, 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'X-Load, Content-Type', 'Access-Control-Max-Age': '600', Vary: 'Origin' });
+      return res.end();
+    }
     if (p.startsWith('/gh/') || p.startsWith('/api/')) {
       // A web page cannot add this header to a cross-site request without our blessing,
       // which we never give, so other sites cannot drive the hub.
       if (req.headers['x-load'] !== '1') return send(res, 403, { error: 'missing header' });
     }
     if (p.startsWith('/gh/')) return await proxyGitHub(req, res, p.slice(3) + url.search);
-    if (p === '/api/ping') return send(res, 200, { ok: true, repo: config.repo, mode: config.mode, claude: claudeStatus(), now: nowLocal(settings().tz) });
-    if (p === '/api/ext' && req.method === 'GET') { await files.db.pull().catch(() => {}); return send(res, 200, extState()); }
+    if (p === '/api/ping') return send(res, 200, { ok: true, repo: config.repo, mode: config.mode, claude: claudeStatus(), ext: extSeen ? new Date(extSeen).toISOString() : null, now: nowLocal(settings().tz) });
+    if (p === '/api/ext' && req.method === 'GET') {
+      await files.db.pull().catch(() => {});
+      noteExtension(url.searchParams.get('v'));
+      return send(res, 200, extState());
+    }
     if (p === '/api/ingest' && req.method === 'POST') return send(res, 200, await ingest(await readBody(req)));
     if (p === '/api/sessions' && req.method === 'POST') { await addSessions((await readBody(req)).sessions || []); return send(res, 200, { ok: true }); }
     if (p === '/api/timer' && req.method === 'POST') return send(res, 200, await setTimer(await readBody(req)));
@@ -327,6 +358,16 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// The phone cannot ask the hub directly, so the assistant's state is kept in the data.
+function publishClaudeState() {
+  const st = claudeStatus().state;
+  if (st === 'unknown' || files.db.doc?.settings?.main?.claude === st) return;
+  exclusive(async () => {
+    await files.db.pull();
+    await files.db.push({ ...files.db.doc, settings: { ...files.db.doc.settings, main: stamp(files.db.doc.settings?.main, { claude: st }) } }, 'assistant state');
+  }).catch((e) => log('claude state', e.message));
+}
+
 // ---------- background loops ----------
 
 async function tick() {
@@ -339,18 +380,22 @@ async function tick() {
   }
 }
 
-let lastReviewDay = '';
-let lastBackupDay = '';
+// Remembered across restarts so a restart after 9 pm does not run the nightly review twice.
+const DAILY = path.join(HOME, 'daily.json');
+let { lastReviewDay = '', lastBackupDay = '' } = fs.existsSync(DAILY) ? JSON.parse(fs.readFileSync(DAILY, 'utf8')) : {};
+const saveDaily = () => fs.writeFileSync(DAILY, JSON.stringify({ lastReviewDay, lastBackupDay }));
 async function daily() {
   const s = settings();
   const d = todayFn(s.tz);
   const hour = +nowLocal(s.tz).slice(11, 13);
   if (hour >= (s.managerHour ?? 21) && lastReviewDay !== d) {
     lastReviewDay = d;
+    saveDaily();
     runReview({ auto: false }).catch((e) => log('nightly review', e.message));
   }
   if (lastBackupDay !== d) {
     lastBackupDay = d;
+    saveDaily();
     const dir = path.join(HOME, 'backups');
     for (const [k, f] of Object.entries(files)) if (f.doc) fs.writeFileSync(path.join(dir, `${d}-${k}.json`), JSON.stringify(f.doc));
     const all = fs.readdirSync(dir).sort();
@@ -367,7 +412,8 @@ for (const [k, f] of Object.entries(files)) {
 server.listen(PORT, '127.0.0.1', async () => {
   log(`Load hub on http://127.0.0.1:${PORT} · data ${config.mode === 'github' ? config.repo : 'local'}`);
   await pullAll().catch((e) => log('initial pull', e.message));
-  probeClaude().then((s) => log('claude', s.state));
+  probeClaude().then((s) => { log('claude', s.state); publishClaudeState(); });
+  setInterval(publishClaudeState, 5 * 60e3);
   setInterval(tick, 20e3);
   setInterval(daily, 5 * 60e3);
   setTimeout(daily, 30e3);

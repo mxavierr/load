@@ -97,6 +97,9 @@ export function makePlan({ tasks, sessions, settings = {}, now = new Date(), hor
   const queue = open
     .filter((t) => !(t.due && t.due < `${today}T00:00`))
     .filter((t) => !t.snooze || t.snooze <= today)
+    // Undated work only gets a day when you give it one.
+    .filter((t) => t.due || (t.doDate && t.doDate >= today))
+    .filter((t) => !t.missing || t.doDate)
     .sort((a, b) => (info.get(a.id).by || '9999') .localeCompare(info.get(b.id).by || '9999') || (b.pri || 0) - (a.pri || 0));
 
   const place = (d, t, min, why) => {
@@ -118,7 +121,9 @@ export function makePlan({ tasks, sessions, settings = {}, now = new Date(), hor
     if (inf.left <= 0) continue;
     const last = inf.by ? Math.min(dayIdx(inf.by), horizon - 1) : horizon - 1;
     if (last < 0) continue;
-    for (let i = 0; i <= last && inf.left > 0; i++) {
+    // Nothing to work on before it opens (a dropbox or quiz with a start date).
+    const first = t.start && dayOf(t.start) > today ? Math.min(dayIdx(dayOf(t.start)), last) : 0;
+    for (let i = first; i <= last && inf.left > 0; i++) {
       const free = days[i].cap - days[i].used;
       const mustFinish = i === last && inf.by && dayIdx(inf.by) <= horizon - 1;
       let chunk = mustFinish ? inf.left : Math.min(inf.left, free);

@@ -1,7 +1,7 @@
 // Productivity numbers from tracked sessions and finished tasks. Plain arithmetic.
 
 import { live } from './doc.js';
-import { toLocal, today as todayFn, addDays, startOfWeek, dayOf, fmtMin } from './time.js';
+import { toLocal, today as todayFn, addDays, startOfWeek, dayOf, fmtMin, asLocal } from './time.js';
 import { loggedByTask, makeEstimator } from './plan.js';
 import { DEFAULT_EST } from './model.js';
 
@@ -48,7 +48,7 @@ export function insights({ tasks, sessions, settings = {}, now = new Date() }) {
     (byKind[t.kind] ||= []).push({ real, guess });
   }
   const recentDone = done.filter((t) => t.due && dayOf(t.due) >= addDays(today, -28) && dayOf(t.due) <= today);
-  const late = recentDone.filter((t) => t.doneAt && t.doneAt > t.due && t.doneBy !== 'sync');
+  const late = recentDone.filter((t) => t.doneAt && asLocal(t.doneAt, tz) > t.due && t.doneBy !== 'sync');
   const onTime = recentDone.length ? Math.round(100 * (1 - late.length / recentDone.length)) : null;
 
   // How long before the deadline you start, per kind.

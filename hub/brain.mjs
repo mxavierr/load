@@ -27,7 +27,9 @@ Courses are referred to by their id (e.g. PHYS172). Kinds: exam quiz lab rec hw 
 "due" is the real deadline. "doDate" is the day the student plans to work on it. "est" is minutes.
 Use task ids exactly as given. Never invent ids for update/delete/merge.
 Changing a synced task's due date pins it; only do that when the student clearly asks.
-Keep "reply" to one or two short plain sentences. No preamble, no emoji, no mention of being an AI.`;
+Tasks marked "gone from Brightspace" were removed by the course; don't count them as due.
+Nothing changes until the student taps Apply, so describe proposed changes ("This plans…", "Moves…"), never "I've done…".
+Keep "reply" short and plain: one or two sentences for a change, at most four for an answer. No preamble, no emoji, no mention of being an AI.`;
 
 function context(db, settings) {
   const tz = settings.tz;

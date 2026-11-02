@@ -47,6 +47,9 @@ export function fromLocal(s, tz = TZ) {
   return new Date(ts);
 }
 
+/** Accepts either a wall-clock string or an ISO timestamp with a zone; returns wall clock. */
+export const asLocal = (s, tz = TZ) => (!s ? null : /(Z|[+-]\d\d:\d\d)$/.test(s) ? toLocal(s, tz) : s);
+
 export const nowLocal = (tz = TZ, now = new Date()) => toLocal(now, tz);
 export const today = (tz = TZ, now = new Date()) => toLocal(now, tz).slice(0, 10);
 export const dayOf = (s) => (s ? s.slice(0, 10) : null);

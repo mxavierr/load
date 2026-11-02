@@ -4,6 +4,7 @@
 import { stamp, uid, live } from './doc.js';
 import { classify } from './model.js';
 import { mergeTasks } from './reconcile.js';
+import { toLocal } from './time.js';
 
 const EDITABLE = ['title', 'course', 'due', 'est', 'kind', 'notes', 'doDate', 'pri', 'done', 'snooze', 'url', 'checklist'];
 const LOCKABLE = ['title', 'due', 'url', 'kind', 'done'];
@@ -13,16 +14,17 @@ export function editTask(task, set, t = Date.now()) {
   const patch = {};
   const lock = { ...(task.lock || {}) };
   for (const [k, v] of Object.entries(set)) {
-    if (k === 'lock') { Object.assign(lock, v); continue; }
     if (!EDITABLE.includes(k)) continue;
     patch[k] = v;
     if (LOCKABLE.includes(k) && task.src && task.src !== 'manual') lock[k] = true;
   }
+  if (set.lock) Object.assign(lock, set.lock); // an explicit lock (e.g. "use Brightspace's date") wins
   if ('done' in set) {
-    patch.doneAt = set.done ? set.doneAt || new Date(t).toISOString() : undefined;
+    patch.doneAt = set.done ? set.doneAt || toLocal(new Date(t)) : undefined;
     patch.doneBy = set.done ? 'you' : undefined;
   }
-  if ('due' in set && lock.due && task.srcDue === set.due) { lock.due = false; patch.srcDue = undefined; }
+  // Taking the source's date settles the disagreement.
+  if ('due' in set && task.srcDue && task.srcDue === set.due) { lock.due = false; patch.srcDue = undefined; }
   if (JSON.stringify(lock) !== JSON.stringify(task.lock || {})) patch.lock = lock;
   return stamp(task, patch, t);
 }
@@ -77,5 +79,5 @@ export function compactTasks(tasks, { from, to, limit = 160 } = {}) {
     .filter((t) => (!from || !t.due || t.due >= from) && (!to || !t.due || t.due <= to))
     .sort((a, b) => (a.due || '9').localeCompare(b.due || '9'))
     .slice(0, limit)
-    .map((t) => [t.id, t.course || '-', t.due || 'no date', t.kind, t.est ?? '', t.done ? 'done' : 'open', t.doDate || '', t.title].join(' | '));
+    .map((t) => [t.id, t.course || '-', t.due || 'no date', t.kind, t.est ?? '', t.done ? 'done' : t.missing ? 'gone from Brightspace' : 'open', t.doDate || '', t.title].join(' | '));
 }

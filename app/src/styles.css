@@ -44,7 +44,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+html, body { margin: 0; max-width: 100%; background: var(--bg); color: var(--text); font: 14px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
 body { overflow-x: hidden; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 input, textarea, select { font: inherit; color: inherit; }
@@ -215,7 +215,7 @@ a { color: inherit; }
 .bars .col { flex: 1; display: flex; flex-direction: column-reverse; border-radius: 3px; overflow: hidden; min-height: 2px; background: var(--line); }
 .barsX { display: flex; gap: 4px; padding: 4px 8px 0; }
 .barsX span { flex: 1; text-align: center; font-size: 10px; color: var(--text-3); }
-.heat { display: grid; grid-template-columns: 26px repeat(24, 1fr); gap: 2px; padding: 12px 8px 4px; }
+.heat { display: grid; grid-template-columns: 22px repeat(24, minmax(0, 1fr)); gap: 2px; padding: 12px 8px 4px; }
 .heat i { aspect-ratio: 1; border-radius: 2px; background: var(--line); }
 .heat em { font-style: normal; font-size: 10px; color: var(--text-3); }
 .tips { margin: 8px 8px 4px; padding: 0; list-style: none; display: grid; gap: 6px; }

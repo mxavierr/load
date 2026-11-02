@@ -96,8 +96,8 @@ function Answer({ req }) {
           <div class="reply">{req.reply}</div>
           {req.ops?.length > 0 && (
             <ul>
-              {req.ops.map((op) => (
-                <li><Icon n={op.op === 'add' ? 'plus' : op.op === 'delete' ? 'trash' : 'right'} size={12} /><span>{describeOp(op, db.value.tasks)}</span></li>
+              {req.ops.map((op, i) => (
+                <li key={i}><Icon n={op.op === 'add' ? 'plus' : op.op === 'delete' ? 'trash' : 'right'} size={12} /><span>{describeOp(op, db.value.tasks)}</span></li>
               ))}
             </ul>
           )}
