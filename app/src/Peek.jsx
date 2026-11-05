@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { db, log, ui, closePeek, updateTask, deleteTask, toggleDone, timer, startTimer, stopTimer, plan, courses, settings } from './state.js';
-import { Icon, CoursePill, courseColor, dueInfo } from './ui.jsx';
+import { Icon, CoursePill, courseColor, dueInfo, subLabel } from './ui.jsx';
 import { KINDS } from '../../shared/model.js';
 import { live, uid } from '../../shared/doc.js';
 import { fmtMin, today as todayFn, addDays, toLocal, fmtDay, fmtTime } from '../../shared/time.js';
@@ -130,7 +130,7 @@ export function Peek() {
             </div>
 
             <div class="pk">Logged</div>
-            <div class="pv">{spent ? fmtMin(spent) : <span class="hint">nothing yet</span>}{running && <span class="tag red">running</span>}</div>
+            <div class="pv">{spent ? fmtMin(spent) : <span class="hint">nothing yet</span>}{inf?.est.min > 0 && spent > inf.est.min && <span class="tag orange">{fmtMin(spent - inf.est.min)} over estimate</span>}{running && <span class="tag red">running</span>}</div>
 
             <div class="pk">Type</div>
             <div class="pv">
@@ -149,7 +149,7 @@ export function Peek() {
               <>
                 <div class="pk">Status</div>
                 <div class="pv" style={{ color: 'var(--text-2)', fontSize: 13 }}>
-                  {t.sub && <span class="tag green">Submitted {t.sub.length > 10 ? fmtDay(t.sub.slice(0, 10), today) : ''}</span>}
+                  {t.sub && <span class="tag green">{subLabel(t.sub)} {t.sub.length > 10 ? fmtDay(t.sub.slice(0, 10), today) : ''}</span>}
                   {t.opened && !t.sub && <span class="tag">Opened {fmtDay(t.opened.slice(0, 10), today)}</span>}
                   {t.info && <span>{t.info}</span>}
                 </div>

@@ -94,6 +94,9 @@ async function sync(reason) {
     if (text.length !== head.size) throw new Error(`got ${text.length} of ${head.size} bytes`);
     const snap = JSON.parse(text);
     snap.reason = reason;
+    // Time not sent to the hub yet still counts: sync must not tick work in progress.
+    const open = await store.get('session', null);
+    snap.tracking = [...new Set([open?.task, ...(await store.get('pending', [])).map((p) => p.task)].filter(Boolean))];
     if (!snap.ok && snap.errors?.includes('signed-out')) throw new Error('signed-out');
     step = 'reading MyLab';
     snap.mylab = await readMyLab(tab.id, s?.settings?.mylab, opened).catch((e) => ({ ok: false, error: String(e.message || e) }));

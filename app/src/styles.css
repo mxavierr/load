@@ -321,3 +321,45 @@ a { color: inherit; }
   .timerChip { max-width: 180px; }
   .dateSub { display: none; }
 }
+
+/* ---------- Grades ---------- */
+.grRecent { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 13px; }
+.grRecent .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grRecent .when { color: var(--text-3); font-size: 12px; flex: none; }
+.grRecent b { flex: none; font-variant-numeric: tabular-nums; font-weight: 600; }
+.grHint { color: var(--text-3); font-size: 12.5px; padding: 3px 8px; }
+.grLetter { color: var(--text); font-weight: 700; }
+.grBody { padding: 4px 0 10px 10px; }
+.grBody .kpis { padding-left: 0; padding-right: 0; }
+.grKpi { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.grRange { white-space: nowrap; }
+.grNeeds { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 0 0 8px; font-size: 12.5px; }
+.grNeeds .lbl { color: var(--text-3); margin-right: 2px; }
+.grNeeds b { font-weight: 700; }
+.grCat { border-top: 1px solid var(--line); padding: 4px 0; }
+.grRow { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 2px 4px; border-radius: 5px; font-size: 13.5px; }
+.grRow .nm { flex: 1; min-width: 0; font-weight: 550; }
+.grRow .nm i { font-style: normal; font-weight: 450; color: var(--text-3); font-size: 12.5px; }
+.grRow .nm small { display: block; color: var(--text-3); font-size: 12px; font-weight: 400; }
+.grRow .pts { flex: none; min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.grRow .pts small { color: var(--text-3); font-weight: 400; font-size: 11.5px; }
+.grRest { display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--text-3); font-size: 12px; }
+.grInput { display: inline-flex; align-items: center; flex: none; height: 26px; padding: 0 6px; border-radius: 5px; background: var(--bg-soft); border: 1px solid transparent; }
+.grInput:focus-within { border-color: var(--accent); }
+.grInput.on { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.grInput input { width: 40px; border: 0; padding: 0; height: 24px; background: transparent; color: var(--text); font: inherit; font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; outline: none; -moz-appearance: textfield; appearance: textfield; }
+.grInput input::-webkit-outer-spin-button, .grInput input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.grInput input::placeholder { color: var(--text-3); }
+.grInput em { font-style: normal; font-size: 11.5px; color: var(--text-3); margin-left: 2px; }
+.grItem { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 1px 4px 1px 22px; font-size: 13px; color: var(--text-2); }
+.grItem .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grItem .was { flex: none; color: var(--text-3); font-size: 12px; }
+.grItem .val { flex: none; font-variant-numeric: tabular-nums; }
+.grFoot { display: grid; gap: 5px; justify-items: start; border-top: 1px solid var(--line); padding-top: 8px; }
+.grFoot small { color: var(--text-3); font-size: 12px; line-height: 1.4; }
+.grFoot .mini { display: inline-flex; align-items: center; gap: 4px; }
+@media (max-width: 760px) {
+  .grRow.two { flex-wrap: wrap; }
+  .grRow.two .nm { flex-basis: calc(100% - 20px); }
+  .grRow.two .pts { margin-left: auto; }
+}

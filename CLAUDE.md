@@ -11,7 +11,8 @@ Replaces `../fall26-load-local`. Read README.md for the layout.
   `_t` stamp; hand-editing JSON without stamping breaks merging between devices.
 - **Sync (`shared/reconcile.js`) never deletes, never un-ticks, never overrides a field in
   `task.lock`.** A vanished source sets `missing`; a disagreeing date sets `srcDue`.
-  Deleted tasks stay in the index so sync never resurrects them. Tests in
+  It also never ticks a task with tracked time (`opts.tracked`): a MyLab score only means
+  the lesson was started. Deleted tasks stay in the index so sync never resurrects them. Tests in
   `tests/core.test.js` pin these; keep them passing.
 - **`x6e58f3d4b3`** (old shared-title AI survey row) is Matthew's decision. It was
   migrated as-is and excluded from matching (`KEEP_AS_IS` in scripts/migrate.mjs). Don't
@@ -38,6 +39,14 @@ Replaces `../fall26-load-local`. Read README.md for the layout.
   viewed for files and links; for LTI (WileyPLUS) it only means opened.
 - MyLab: topic 21938619's quickLink → console.pearson.com → navigate the same tab to
   `mylab.pearson.com/api/v1/courses/14285764/links/assignments/launch` → DoAssignments.
+
+- `GET /d2l/api/le/1.100/<ou>/grades/` and `/grades/categories/` are readable as a student:
+  they give each item's weight, max points and category, and each category's weight and drops.
+
+## Grades
+
+- Course rules live in `GRADING` in `shared/grades.js`, one entry per course. Update it each term.
+- What-ifs are in `db.grading[course].whatIf`. Real grades come from the library and are never edited.
 
 ## Testing
 

@@ -264,6 +264,10 @@ export function setSettings(patch) {
 export function setCourse(id, patch) {
   change('db', (d) => ({ ...d, courses: { ...d.courses, [id]: stamp(d.courses[id], patch) } }));
 }
+/** Saves a course's what-if scores (they follow you between devices). Real grades are never changed. */
+export function setWhatIf(course, whatIf) {
+  change('db', (d) => ({ ...d, grading: { ...(d.grading || {}), [course]: stamp(d.grading?.[course], { id: course, whatIf: whatIf || undefined }) } }));
+}
 export function setLayout(key, value) {
   change('db', (d) => ({ ...d, layout: { ...(d.layout || {}), [key]: stamp(d.layout?.[key], { id: key, ...value }) } }));
 }

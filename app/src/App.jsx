@@ -4,6 +4,7 @@ import { Icon, relTime } from './ui.jsx';
 import { CommandBar } from './CommandBar.jsx';
 import { Peek } from './Peek.jsx';
 import { TodayBlock, UpcomingBlock, ClassesBlock, InsightsBlock, HealthBlock, NewsBlock } from './blocks.jsx';
+import { GradesBlock } from './Grades.jsx';
 import { live } from '../../shared/doc.js';
 import { DOW, MONTHS, today as todayFn, weekday } from '../../shared/time.js';
 
@@ -12,10 +13,11 @@ const BLOCKS = {
   upcoming: { title: 'Upcoming', C: UpcomingBlock, span: 5 },
   health: { title: 'Status', C: HealthBlock, span: 3 },
   classes: { title: 'Classes', C: ClassesBlock, span: 4 },
+  grades: { title: 'Grades', C: GradesBlock, span: 6 },
   insights: { title: 'Insights', C: InsightsBlock, span: 4 },
   news: { title: 'Announcements', C: NewsBlock, span: 4 },
 };
-const DEFAULT_ORDER = ['today', 'upcoming', 'health', 'classes', 'insights', 'news'];
+const DEFAULT_ORDER = ['today', 'upcoming', 'health', 'grades', 'classes', 'insights', 'news'];
 const SPANS = [3, 4, 5, 6, 8, 12];
 
 const isPhone = () => matchMedia('(max-width: 760px)').matches;

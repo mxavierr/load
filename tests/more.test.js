@@ -9,7 +9,7 @@ import { makePlan, workDay } from '../shared/plan.js';
 import { parseQuick, isCommand } from '../shared/quickadd.js';
 import { editTask, applyOps, newTask } from '../shared/ops.js';
 import { runChecks } from '../shared/checks.js';
-import { reconcile } from '../shared/reconcile.js';
+import { reconcile, trackedIds } from '../shared/reconcile.js';
 import { shouldSync, matchTask, beat, close, lastSlot } from '../extension/src/logic.js';
 import { asLocal } from '../shared/time.js';
 
@@ -171,6 +171,43 @@ describe('sync never fights you', () => {
     expect(r2.db.tasks[id].done).toBe(false);
     expect(r2.db.tasks[id].due).toBe('2026-11-08T23:59');
     expect(r2.db.tasks[id].moved.from).toBe('2026-11-07T23:59');
+  });
+  describe('work you are tracking', () => {
+    const rows = (scored) => ({ at: '2026-11-02T13:00:00.000Z', ok: true, courses: [], mylab: { ok: true, rows: [{ id: '123456', title: 'Lesson 26', due: '2026-11-03T23:59', scored }] } });
+    const start = () => reconcile({}, rows(false), { settings, now: 1 }).db;
+    const id = 'mylab:123456';
+
+    it('sync ticks work nobody tracked', () => {
+      expect(reconcile(start(), rows(true), { settings, now: 2 }).db.tasks[id].done).toBe(true);
+    });
+    it('sync leaves tracked work open and notes what it saw', () => {
+      const r = reconcile(start(), rows(true), { settings, now: 2, tracked: new Set([id]) });
+      expect(r.db.tasks[id].done).toBeFalsy();
+      expect(r.db.tasks[id].sub).toBe('scored');
+      expect(r.report.completed).toEqual([]);
+    });
+    it('time logged under a merged-in id still counts', () => {
+      const db = start();
+      db.tasks[id] = stamp(db.tasks[id], { aliases: ['t:old'] }, 2);
+      expect(reconcile(db, rows(true), { settings, now: 3, tracked: new Set(['t:old']) }).db.tasks[id].done).toBeFalsy();
+    });
+    it('finds the running timer, logged sessions and the extension\'s open session', () => {
+      const ids = trackedIds({ timer: { main: { task: 'a' } } }, { s1: { task: 'b' }, s2: { task: 'gone', deleted: true } }, ['c']);
+      expect([...ids].sort()).toEqual(['a', 'b', 'c']);
+    });
+    it('your own tick still sticks', () => {
+      const db = start();
+      db.tasks[id] = editTask(db.tasks[id], { done: true }, 2);
+      expect(reconcile(db, rows(true), { settings, now: 3, tracked: new Set([id]) }).db.tasks[id].doneBy).toBe('you');
+    });
+    it('going over the estimate keeps a task on the plan, open', () => {
+      const tasks = { x: stamp(null, { id: 'x', title: 'Lesson 26', kind: 'hw', est: 60, due: '2026-11-05T23:59' }, 1) };
+      const sessions = { s: { id: 's', task: 'x', s: '2026-11-05T10:00:00Z', e: '2026-11-05T12:00:00Z' } };
+      const p = makePlan({ tasks, sessions, settings: { tz: TZ }, now: new Date('2026-11-05T15:00:00Z') });
+      expect(tasks.x.done).toBeUndefined();
+      expect(p.days[0].items.map((i) => i.id)).toEqual(['x']);
+      expect(p.info.get('x').spent).toBe(120);
+    });
   });
   it('a failed course read never marks its tasks missing', () => {
     const r1 = reconcile({}, snap([{ id: 1, title: 'LAB 1', due: '2026-11-08T04:59:00.000Z' }]), { settings, now: 1 });

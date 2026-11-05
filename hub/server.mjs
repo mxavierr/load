@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { RemoteFile, FILES } from '../shared/store.js';
 import { stamp, live, uid } from '../shared/doc.js';
-import { reconcile, buildLibrary } from '../shared/reconcile.js';
+import { reconcile, buildLibrary, trackedIds } from '../shared/reconcile.js';
 import { DEFAULT_SETTINGS } from '../shared/model.js';
 import { parseQuick } from '../shared/quickadd.js';
 import { newTask } from '../shared/ops.js';
@@ -85,7 +85,8 @@ async function ingest(snap) {
   return exclusive(async () => {
     await pullAll();
     const s = settings();
-    const { db, report, schedules } = reconcile(files.db.doc, snap, { settings: s });
+    const tracked = trackedIds(files.db.doc, files.log.doc?.sessions, snap.tracking);
+    const { db, report, schedules } = reconcile(files.db.doc, snap, { settings: s, tracked });
     const byOu = new Map();
     for (const c of live(db.courses)) for (const ou of c.ous || []) byOu.set(String(ou), c.id);
     const library = buildLibrary(files.library.doc, snap, byOu, { tz: s.tz, schedules });

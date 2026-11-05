@@ -38,7 +38,7 @@ left for you.
 
 | Piece | Where | Does |
 |---|---|---|
-| App | `app/` | One page of blocks you can rearrange: Today, Upcoming, Status, Classes, Insights, Announcements. Click a task to open its side panel. |
+| App | `app/` | One page of blocks you can rearrange: Today, Upcoming, Status, Grades, Classes, Insights, Announcements. Click a task to open its side panel. |
 | Hub | `hub/` | Background process on the Mac. Serves the app, holds your GitHub login, merges syncs, answers the command bar and runs the checks. |
 | Safari extension | `extension/` | Syncs at 8:00 and 18:00 when you're using the Mac (or when you press Sync), and tracks time on assignment pages. |
 | Shared core | `shared/` | Data format and merging, the Brightspace reconciler, the quick-add parser, the planner and estimates, and the health checks. |
@@ -54,6 +54,7 @@ surveys, calendar and announcements, plus MyLab's list. It doesn't rely on just 
 **What sync never does:**
 - It never deletes anything. A task that disappears from Brightspace is marked *Not in Brightspace*.
 - It never un-ticks a task.
+- It never ticks work you've tracked time on. A task with a running timer or logged time stays open, tagged *Submitted* or *Has a score*, until you tick it.
 - It never overrides a date or title you edited. If Brightspace disagrees with a date you set, the task shows *Date differs* with a one-tap fix.
 
 **Command bar** (⌘K or /):
@@ -72,6 +73,11 @@ Type into the box next to Check to point it at something specific.
 - You can also press ▶ on any task, on the Mac or phone.
 - Estimates come from your own past times on similar work.
 - Today's list spreads big work over the days before it's due, within your daily capacity (set it in Settings).
+
+**Grades.** Each course shows the grade so far, an estimated final and the range still possible, using the syllabus weights in `shared/grades.js` and the gradebook from each sync.
+- Type a score into any box to try a what-if. It follows you between devices and never touches real grades; *Back to real grades* clears it.
+- Empty boxes assume you'll match your average in that category.
+- *Just graded* lists what came back in the last 7 days.
 
 ## Commands
 

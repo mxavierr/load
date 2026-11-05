@@ -234,6 +234,7 @@ export function reconcile(db, snap, opts = {}) {
   const t = opts.now || nowMs();
   const settings = { ...(opts.settings || {}) };
   const tz = settings.tz;
+  const tracked = new Set(opts.tracked || []);
   const at = snap.at || new Date(t).toISOString();
   const report = { at, ok: !!snap.ok, added: [], changed: [], completed: [], merged: [], missing: [], back: [], conflicts: [], errors: [...(snap.errors || [])], counts: {} };
   const { courses, byOu } = ensureCourses(db, snap, t);
@@ -330,7 +331,10 @@ export function reconcile(db, snap, opts = {}) {
     if (task.missing) { patch.missing = undefined; report.back.push({ id: task.id, title: task.title }); }
     if (e.done) {
       patch.sub = e.done;
-      if (!task.done && !lock.done) {
+      // Work you're tracking stays open until you tick it: a MyLab score only means the
+      // lesson was started, and a first upload may not be the last.
+      const isTracked = tracked.has(task.id) || (task.aliases || []).some((a) => tracked.has(a));
+      if (!task.done && !lock.done && !isTracked) {
         Object.assign(patch, { done: true, doneAt: e.done === 'scored' || e.done === 'graded' ? toLocal(new Date(t), tz) : e.done, doneBy: 'sync' });
         report.completed.push({ id: task.id, title: task.title });
       }
@@ -354,6 +358,14 @@ export function reconcile(db, snap, opts = {}) {
   }
 
   return { db: { ...db, courses, tasks }, report, schedules };
+}
+
+/** Task ids with time on them: the running timer, logged sessions, and the extension's open session. */
+export function trackedIds(db, sessions, extra = []) {
+  const out = new Set(extra || []);
+  if (db?.timer?.main?.task) out.add(db.timer.main.task);
+  for (const s of Object.values(sessions || {})) if (s.task && !s.deleted) out.add(s.task);
+  return out;
 }
 
 /** Fold duplicate tasks into one; the survivor keeps the source id when one of them has it. */
@@ -419,7 +431,7 @@ export function buildLibrary(prev, snap, byOuKey, opts = {}) {
     lib.courses[ou] = {
       id: String(ou), ou, course: byOuKey.get(String(ou)), name: c.name, at: nowL,
       tree: c.toc ? tree(c.toc) : prevC.tree || [],
-      grades: c.grades ? c.grades.filter((g) => g.den || g.shown).map((g) => ({ name: g.name, type: g.type, num: g.num, den: g.den, shown: g.shown })) : prevC.grades || [],
+      grades: c.grades ? c.grades.filter((g) => g.den || g.shown).map((g) => ({ id: g.id, name: g.name, type: g.type, num: g.num, den: g.den, shown: g.shown, mod: g.mod })) : prevC.grades || [],
       news: c.news ? c.news.slice(0, 15).map((n) => ({ ...n, at: toLocal(n.at, tz), n: mark(`${ou}:n:${n.id}`) })) : prevC.news || [],
       schedule: opts.schedules?.[ou] || prevC.schedule || [],
     };

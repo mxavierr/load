@@ -89,6 +89,9 @@ export function relTime(iso) {
   return `${Math.round(m / 1440)}d ago`;
 }
 
+/** What sync saw on a task. A MyLab score appears as soon as a lesson is started. */
+export const subLabel = (sub) => (sub === 'scored' ? 'Has a score' : sub === 'graded' ? 'Graded' : 'Submitted');
+
 export function Empty({ children }) {
   return <div class="empty">{children}</div>;
 }
