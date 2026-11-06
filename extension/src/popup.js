@@ -18,7 +18,11 @@ async function render() {
     <span class="small">${p.syncing ? 'Syncing…' : `Synced ${ago(last)}`}</span>
     <span class="dot ${!p.hub ? 'bad' : bad ? 'bad' : 'ok'}" title="${!p.hub ? 'The Load hub on this Mac is not running' : ''}"></span></div>`));
   if (!p.hub) w.append($('<div class="err" style="margin:-4px 0 10px">The Load hub on this Mac is not answering. Run hub/install.sh once.</div>'));
-  if (bad) w.append($(`<div class="err" style="margin:-4px 0 10px">Last sync: ${esc(p.lastResult.errors.join('; ')).slice(0, 160)}</div>`));
+  if (p.needsSignin) {
+    const box = $('<div class="err" style="margin:-4px 0 10px">Brightspace needs you to sign in. The sync finishes by itself afterwards. <button class="btn">Go to sign-in</button></div>');
+    box.querySelector('button').onclick = () => browser.runtime.sendMessage({ type: 'showSignin' }).then(() => window.close());
+    w.append(box);
+  } else if (bad) w.append($(`<div class="err" style="margin:-4px 0 10px">Last sync: ${esc(p.lastResult.errors.join('; ')).slice(0, 160)}</div>`));
 
   const add = $('<form class="add"><input placeholder="Add a task…" autofocus /></form>');
   add.onsubmit = async (e) => {

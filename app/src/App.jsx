@@ -195,7 +195,12 @@ function Settings() {
         <div class="field">
           <label>Brightspace sync times</label>
           <input value={s.syncTimes.join(', ')} onChange={(e) => setSettings({ syncTimes: e.target.value.split(',').map((x) => x.trim()).filter((x) => /^\d\d:\d\d$/.test(x)) })} />
-          <small>Runs at these times while the Mac is in use; catches up if it was asleep.</small>
+          <small>Runs at these times while Safari is open, catches up if the Mac was asleep, and also runs when you open Brightspace with data over 3 hours old.</small>
+        </div>
+        <div class="field">
+          <label>Read MyLab every (days)</label>
+          <input type="number" min="1" value={s.mylabEveryDays} onChange={(e) => setSettings({ mylabEveryDays: Math.max(1, +e.target.value || 7) })} />
+          <small>Its assignment list barely changes. Pressing Sync always reads it too.</small>
         </div>
         <div class="field">
           <label>Skip items whose title contains</label>

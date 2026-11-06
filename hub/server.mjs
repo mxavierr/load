@@ -10,7 +10,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { RemoteFile, FILES } from '../shared/store.js';
@@ -21,7 +21,7 @@ import { parseQuick } from '../shared/quickadd.js';
 import { newTask } from '../shared/ops.js';
 import { makePlan } from '../shared/plan.js';
 import { today as todayFn, toLocal, nowLocal, asLocal } from '../shared/time.js';
-import { runChecks } from '../shared/checks.js';
+import { runChecks, syncAlert } from '../shared/checks.js';
 import { assist, review } from './brain.mjs';
 import { claudeStatus, probeClaude } from './claude.mjs';
 import { localGitHub } from './localgh.mjs';
@@ -99,7 +99,12 @@ async function ingest(snap) {
       mylab: snap.mylab ? { ok: !!snap.mylab.ok, n: snap.mylab.rows?.length || 0, error: snap.mylab.error } : undefined,
     });
     const logDoc = { ...files.log.doc, syncs: pruneSyncs({ ...(files.log.doc.syncs || {}), [syncId]: rec }) };
-    const dbDoc = { ...db, settings: { ...(db.settings || {}), main: stamp(db.settings?.main, { lastSync: report.at, syncRequest: undefined, extError: undefined }) } };
+    // MyLab is read on its own, so a MyLab-only snapshot says nothing about Brightspace.
+    const stamps = {
+      ...(snap.courses?.length ? { lastSync: report.at, syncRequest: undefined, extError: undefined } : {}),
+      ...(snap.mylab?.ok ? { lastMyLab: report.at } : {}),
+    };
+    const dbDoc = { ...db, settings: { ...(db.settings || {}), main: stamp(db.settings?.main, stamps) } };
     await files.db.push(dbDoc, `sync ${report.at}`);
     await files.library.push(library, `library ${report.at}`);
     await files.log.push(logDoc, `sync log ${report.at}`);
@@ -229,8 +234,9 @@ function extState() {
   const todayList = plan ? plan.days[0].items.slice(0, 8).map((i) => ({ id: i.id, min: i.min, title: db.tasks[i.id]?.title, course: db.tasks[i.id]?.course, due: db.tasks[i.id]?.due })) : [];
   const courses = Object.fromEntries(live(db.courses).map((c) => [c.id, c.color]));
   return {
-    settings: { syncTimes: s.syncTimes, term: s.term, extraOus: s.extraOus, mylab: s.mylab, tz: s.tz },
+    settings: { syncTimes: s.syncTimes, term: s.term, extraOus: s.extraOus, mylab: s.mylab, mylabEveryDays: s.mylabEveryDays, tz: s.tz },
     lastSync: s.lastSync || null,
+    lastMyLab: s.lastMyLab || null,
     syncRequest: s.syncRequest || null,
     timer: db.timer?.main?.task ? db.timer.main : null,
     index, today: todayList, courses,
@@ -349,10 +355,10 @@ const server = http.createServer(async (req, res) => {
       // A sync the extension could not finish: log it and show it in Status.
       const b = await readBody(req);
       if (b.started) { log('extension sync started', b.reason || '', JSON.stringify(b.access || {})); return send(res, 200, { ok: true }); }
-      log('extension sync failed', b.reason || '', b.error || '', JSON.stringify(b.access || {}));
+      log('extension sync failed', b.reason || '', b.error || '', b.where ? `at ${b.where}` : '', JSON.stringify(b.access || {}));
       exclusive(async () => {
         await files.db.pull();
-        await files.db.push({ ...files.db.doc, settings: { ...files.db.doc.settings, main: stamp(files.db.doc.settings?.main, { extError: { at: b.at, error: String(b.error || '').slice(0, 300), access: b.access } }) } }, 'extension error');
+        await files.db.push({ ...files.db.doc, settings: { ...files.db.doc.settings, main: stamp(files.db.doc.settings?.main, { extError: { at: b.at, kind: b.kind, error: String(b.error || '').slice(0, 300), where: b.where, access: b.access } }) } }, 'extension error');
       }).catch((e) => log('ext report', e.message));
       return send(res, 200, { ok: true });
     }
@@ -394,8 +400,27 @@ async function tick() {
 
 // Remembered across restarts so a restart after 9 pm does not run the nightly review twice.
 const DAILY = path.join(HOME, 'daily.json');
-let { lastReviewDay = '', lastBackupDay = '' } = fs.existsSync(DAILY) ? JSON.parse(fs.readFileSync(DAILY, 'utf8')) : {};
-const saveDaily = () => fs.writeFileSync(DAILY, JSON.stringify({ lastReviewDay, lastBackupDay }));
+let { lastReviewDay = '', lastBackupDay = '', lastAlert = 0 } = fs.existsSync(DAILY) ? JSON.parse(fs.readFileSync(DAILY, 'utf8')) : {};
+const saveDaily = () => fs.writeFileSync(DAILY, JSON.stringify({ lastReviewDay, lastBackupDay, lastAlert }));
+
+// The extension cannot speak up when Safari is closed or the extension is off, so the hub
+// watches for syncs falling behind. At most one notification every 6 hours, during the day.
+const ALERT_EVERY = 6 * 3600e3;
+function watchSync() {
+  const s = settings();
+  if (!files.db.doc) return;
+  const seen = [s.extSeen, extSeen ? new Date(extSeen).toISOString() : null].filter(Boolean).sort().pop();
+  const alert = syncAlert({ lastSync: s.lastSync, extError: s.extError, extSeen: seen });
+  if (!alert || Date.now() - lastAlert < ALERT_EVERY) return;
+  const hour = +nowLocal(s.tz).slice(11, 13);
+  if (hour < 8 || hour >= 23) return;
+  lastAlert = Date.now();
+  saveDaily();
+  log('sync alert', alert.id, alert.text);
+  if (config.mode !== 'github') return; // a throwaway test hub stays quiet
+  const script = `display notification ${JSON.stringify(alert.text)} with title "Load" sound name "Glass"`;
+  execFile('/usr/bin/osascript', ['-e', script], (e) => { if (e) log('sync alert failed', e.message); });
+}
 async function daily() {
   const s = settings();
   const d = todayFn(s.tz);
@@ -429,4 +454,6 @@ server.listen(PORT, '127.0.0.1', async () => {
   setInterval(tick, 20e3);
   setInterval(daily, 5 * 60e3);
   setTimeout(daily, 30e3);
+  setInterval(watchSync, 5 * 60e3);
+  setTimeout(watchSync, 60e3);
 });

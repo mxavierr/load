@@ -18,7 +18,7 @@ export function runChecks({ db, log, library, settings = {}, now = new Date() })
   // Sync freshness and errors.
   const syncs = live(log?.syncs).filter((s) => s.kind !== 'migration').sort((a, b) => (a.at < b.at ? 1 : -1));
   const full = syncs.filter((s) => s.kind === 'full');
-  const lastOk = syncs.find((s) => s.ok);
+  const lastOk = syncs.find((s) => s.ok && s.kind !== 'mylab');
   if (!syncs.length) add('sync-never', 'warn', 'Brightspace has not synced yet.');
   else {
     const hrs = lastOk ? (now - Date.parse(lastOk.at)) / 36e5 : Infinity;
@@ -29,6 +29,7 @@ export function runChecks({ db, log, library, settings = {}, now = new Date() })
     // A course that suddenly reports far fewer items usually means a failed read, not a lighter week.
     if (full.length > 1 && full[0].counts && full[1].counts) {
       for (const [c, n] of Object.entries(full[1].counts)) {
+        if (c === 'MyLab') continue; // read on its own schedule, so absent from most syncs
         const m = full[0].counts[c] ?? 0;
         if (n >= 5 && m < n * 0.5) add(`sync-drop-${c}`, 'warn', `${c} went from ${n} items to ${m} in the last sync.`);
       }
@@ -85,4 +86,19 @@ export function runChecks({ db, log, library, settings = {}, now = new Date() })
 
   // Heavy days ahead.
   return out;
+}
+
+/**
+ * What the Mac should tell you about syncing, if anything. Only the hub can say this
+ * reliably: it keeps running when Safari or the extension does not.
+ */
+export function syncAlert({ lastSync, extError, extSeen, now = Date.now(), overdueHours = 15 }) {
+  const ls = Date.parse(lastSync || 0) || 0;
+  const failed = extError && Date.parse(extError.at) > ls ? extError : null;
+  if (failed?.kind === 'signin') return { id: 'signin', text: 'Brightspace needs you to sign in. The page is waiting in Safari, and the sync finishes by itself.' };
+  if (now - ls < overdueHours * 36e5) return null;
+  const hrs = Math.round((now - ls) / 36e5);
+  const seen = Date.parse(extSeen || 0) || 0;
+  if (now - seen > 45 * 60e3) return { id: 'no-extension', text: `No sync for ${hrs} hours, and Load's Safari extension isn't running. Open Safari to catch up.` };
+  return { id: 'failing', text: `No sync for ${hrs} hours. ${failed ? failed.error : 'Load will keep trying.'}` };
 }

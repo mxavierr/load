@@ -50,7 +50,7 @@ function navigate(t, url) {
   emit('updated', t.id, { status: 'complete' }, t);
 }
 
-const ctx = vm.createContext({ browser, fetch, console, setTimeout, clearTimeout, setInterval, Date, URL, __LOAD_HUB__: hubUrl });
+const ctx = vm.createContext({ browser, fetch, console, setTimeout, clearTimeout, setInterval, clearInterval, Date, URL, __LOAD_HUB__: hubUrl });
 vm.runInContext(fs.readFileSync(new URL('../extension/dist/background.js', import.meta.url), 'utf8'), ctx);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const send = (msg, tab) => new Promise((res) => { const r = emit('message', msg, { tab }, res); if (!r.includes(true)) res(); });

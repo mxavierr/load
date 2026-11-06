@@ -43,6 +43,21 @@ Replaces `../fall26-load-local`. Read README.md for the layout.
 - `GET /d2l/api/le/1.100/<ou>/grades/` and `/grades/categories/` are readable as a student:
   they give each item's weight, max points and category, and each category's weight and drops.
 
+## How sync stays reliable (`extension/src/background.js`)
+
+- Always read through a fresh hidden tab. Never reuse an open Brightspace tab: its session can
+  be expired, and rebuilding the extension orphans its content script, which then answers
+  nothing. **A reply of `undefined` is not an answer**; check for `{ ok: true }`.
+- Don't reload or navigate the waiting sign-in tab (`signinTab`): someone may be typing in it.
+- Never enter or store credentials. A person signs in; the extension only notices and resumes.
+- Brightspace is saved before MyLab starts. A snapshot with `courses: []` is MyLab-only and must
+  not move `lastSync`.
+- Safari can stop the background page at any time, and timers die with it. `run` in storage
+  is the record that lets the next start clean up.
+- Rebuilding the extension breaks existing tabs' scripts, which fresh tabs make harmless.
+- Anything written to a data file must be stamped, including `library`. Unstamped fields tie on
+  merge, and a tie compares the text, so older data can win forever (this froze grades until 2026-11-06).
+
 ## Grades
 
 - Course rules live in `GRADING` in `shared/grades.js`, one entry per course. Update it each term.
@@ -63,3 +78,5 @@ Replaces `../fall26-load-local`. Read README.md for the layout.
   contents API.
 - Extension end to end: `node tests/ext-harness.mjs <hub url> fixtures/snap-live.json fixtures/mylab-snap.json`
   runs the built `extension/dist/background.js` against a simulated Safari API.
+- Sync failure modes: `node tests/ext-scenarios.mjs <hub url> fixtures/snap-live.json fixtures/mylab-snap.json`
+  (signed out, silent renewal, dead tab, background shutdown, save retry, MyLab failure).

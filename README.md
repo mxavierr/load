@@ -40,7 +40,7 @@ left for you.
 |---|---|---|
 | App | `app/` | One page of blocks you can rearrange: Today, Upcoming, Status, Grades, Classes, Insights, Announcements. Click a task to open its side panel. |
 | Hub | `hub/` | Background process on the Mac. Serves the app, holds your GitHub login, merges syncs, answers the command bar and runs the checks. |
-| Safari extension | `extension/` | Syncs at 8:00 and 18:00 when you're using the Mac (or when you press Sync), and tracks time on assignment pages. |
+| Safari extension | `extension/` | Syncs Brightspace at 8:00 and 18:00 while Safari is open, when you press Sync, and when you open Brightspace with data over 3 hours old. Reads MyLab about weekly. Tracks time on assignment pages. |
 | Shared core | `shared/` | Data format and merging, the Brightspace reconciler, the quick-add parser, the planner and estimates, and the health checks. |
 
 **Why duplicates are gone.** Each task is keyed by Brightspace's own ids (dropbox, quiz,
@@ -62,6 +62,14 @@ surveys, calendar and announcements, plus MyLab's list. It doesn't rely on just 
 - A request or question (`push all ENGT labs an hour later`, `what's due before the exam?`) goes to Opus on your plan. You see the proposed changes and tap Apply.
 - Tab switches between the two.
 - From the phone, requests wait until the Mac is awake.
+
+**When a sync can't run.** Every sync reads through its own fresh hidden tab, which gives an
+idle session the chance to renew through the university login. If you really have to sign in,
+one sign-in page waits in Safari and the sync finishes by itself once you're in. Brightspace is
+saved before MyLab is touched. If Safari stops the extension mid-sync, the next start closes
+its tabs and reports where it stopped. The hub sends a Mac notification when a sign-in is
+waiting or nothing has synced for 15 hours (at most every 6 hours, 8:00 to 23:00).
+Failure modes are simulated by `node tests/ext-scenarios.mjs <throwaway hub> fixtures/snap-live.json fixtures/mylab-snap.json`.
 
 **Status / Check.** Plain-code checks run all the time: stale sync, sign-out, duplicates,
 date conflicts, overdue work, vanished items, and announcements that mention date changes.

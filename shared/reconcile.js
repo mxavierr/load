@@ -428,13 +428,15 @@ export function buildLibrary(prev, snap, byOuKey, opts = {}) {
       ],
     }));
     const prevC = lib.courses[ou] || {};
-    lib.courses[ou] = {
+    // Stamped so this read beats the saved copy when the two are merged. Unstamped fields
+    // tie, and a tie is settled by comparing the text, which can keep the older grades forever.
+    lib.courses[ou] = stamp(prevC, {
       id: String(ou), ou, course: byOuKey.get(String(ou)), name: c.name, at: nowL,
       tree: c.toc ? tree(c.toc) : prevC.tree || [],
       grades: c.grades ? c.grades.filter((g) => g.den || g.shown).map((g) => ({ id: g.id, name: g.name, type: g.type, num: g.num, den: g.den, shown: g.shown, mod: g.mod })) : prevC.grades || [],
       news: c.news ? c.news.slice(0, 15).map((n) => ({ ...n, at: toLocal(n.at, tz), n: mark(`${ou}:n:${n.id}`) })) : prevC.news || [],
       schedule: opts.schedules?.[ou] || prevC.schedule || [],
-    };
+    }, t);
   }
   return lib;
 }

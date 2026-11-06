@@ -8,7 +8,13 @@ import { collectBrightspace } from '../../shared/collect.js';
 const CHUNK = 150000;
 let held = null;
 
-browser.runtime.onMessage.addListener((msg, sender, reply) => {
+// The background may add this script again if a page is slow to answer; one listener only.
+if (!globalThis.__loadBrightspace) {
+  globalThis.__loadBrightspace = true;
+  browser.runtime.onMessage.addListener(listen);
+}
+
+function listen(msg, sender, reply) {
   if (msg?.type === 'collect') {
     collectBrightspace(msg.cfg)
       .catch((e) => ({ ok: false, errors: [String((e && e.message) || e)], courses: [] }))
@@ -28,4 +34,4 @@ browser.runtime.onMessage.addListener((msg, sender, reply) => {
     return true;
   }
   if (msg?.type === 'ping') { reply({ ok: true }); return false; }
-});
+}

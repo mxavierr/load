@@ -384,6 +384,7 @@ export function HealthBlock() {
   const requested = s.syncRequest && (!s.lastSync || s.syncRequest > s.lastSync) && Date.now() - Date.parse(s.syncRequest) < 6 * 36e5 ? s.syncRequest : null;
   const extSeen = [conn.value.ext, s.extSeen].filter(Boolean).sort().pop();
   const failed = s.extError && (!s.lastSync || s.extError.at > s.lastSync) ? s.extError : null;
+  const signin = failed?.kind === 'signin';
   const extAlive = extSeen && Date.now() - Date.parse(extSeen) < 45 * 60e3;
   // Items already acted on, or about tasks that are now done or gone, drop off the report.
   const items = (report?.items || []).filter((it, i) => it.level !== 'ok' && !(report.applied || []).includes(i)
@@ -394,8 +395,8 @@ export function HealthBlock() {
       <div class="status">
         <div class="statusRow">
           <span class={`dot ${failed ? 'err' : requested ? 'idle' : syncDot}`} />
-          <span class="lbl">{failed ? 'Last sync failed' : requested ? 'Sync requested' : `Brightspace ${last ? `synced ${relTime(last.at)}` : 'not synced yet'}`}
-            <small>{failed ? `${failed.error} · ${relTime(failed.at)}` : requested ? (extAlive ? 'Starting within a minute…' : 'Waiting for the Safari extension on the Mac.') : last ? summarize(last) : `Runs at ${s.syncTimes.join(' and ')} while the Mac is in use.`}</small>
+          <span class="lbl">{signin ? 'Sign in to Brightspace' : failed ? 'Last sync failed' : requested ? 'Sync requested' : `Brightspace ${last ? `synced ${relTime(last.at)}` : 'not synced yet'}`}
+            <small>{signin ? `In Safari on the Mac. The sync finishes by itself. Since ${relTime(failed.at)}.` : failed ? `${failed.error} · ${relTime(failed.at)}` : requested ? (extAlive ? 'Starting within a minute…' : 'Waiting for the Safari extension on the Mac.') : last ? summarize(last) : `Runs at ${s.syncTimes.join(' and ')} while Safari is open, and when you open Brightspace.`}</small>
           </span>
           <button class="iconBtn" title="Sync now" onClick={requestSync}><Icon n="sync" size={15} /></button>
         </div>
@@ -403,7 +404,7 @@ export function HealthBlock() {
           <div class="statusRow">
             <span class={`dot ${lastMyLab.mylab.ok ? 'ok' : 'warn'}`} />
             <span class="lbl">MyLab {lastMyLab.mylab.ok ? `read ${relTime(lastMyLab.at)}` : 'skipped last time'}
-              <small>{lastMyLab.mylab.ok ? `${lastMyLab.mylab.n} assignments` : lastMyLab.mylab.error || 'Could not open MyLab'}</small>
+              <small>{lastMyLab.mylab.ok ? `${lastMyLab.mylab.n} assignments · read every ${s.mylabEveryDays} days, or when you press Sync` : lastMyLab.mylab.error || 'Could not open MyLab'}</small>
             </span>
           </div>
         )}

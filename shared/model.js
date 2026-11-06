@@ -92,6 +92,7 @@ export const DEFAULT_SETTINGS = {
   tz: 'America/Indiana/Indianapolis',
   term: '202710',
   syncTimes: ['08:00', '18:00'],
+  mylabEveryDays: 7, // MyLab's list barely changes; Sync reads it too
   capacity: { weekday: 240, weekend: 300 },
   earlyDue: '12:00', // due at or before this -> plan to finish the day before
   ignore: ['excused absence', 'request for extension', 'regrade request'],

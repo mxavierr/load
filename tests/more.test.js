@@ -9,14 +9,31 @@ import { makePlan, workDay } from '../shared/plan.js';
 import { parseQuick, isCommand } from '../shared/quickadd.js';
 import { editTask, applyOps, newTask } from '../shared/ops.js';
 import { runChecks } from '../shared/checks.js';
-import { reconcile, trackedIds } from '../shared/reconcile.js';
-import { shouldSync, matchTask, beat, close, lastSlot } from '../extension/src/logic.js';
+import { reconcile, trackedIds, buildLibrary } from '../shared/reconcile.js';
+import { shouldSync, shouldSyncOnVisit, shouldReadMyLab, isAppPage, matchTask, beat, close, lastSlot } from '../extension/src/logic.js';
+import { syncAlert } from '../shared/checks.js';
 import { asLocal } from '../shared/time.js';
 
 const TZ = 'America/Indiana/Indianapolis';
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'load-test-'));
 const file = (fetch) => new RemoteFile({ repo: 'me/data', path: 'db.json', fetch });
 const task = (id, f, t = 1) => stamp(null, { id, title: id, src: 'manual', ...f }, t);
+
+describe('library updates', () => {
+  it('a new read always beats the saved copy, however the text sorts', () => {
+    const byOu = new Map([['1', 'X']]);
+    // The saved copy has no stamps and its JSON sorts above the new one, as real data did.
+    const saved = { courses: { 1: { id: '1', ou: 1, grades: [{ name: 'Exam 1', num: 80, den: 100 }] } }, seen: {} };
+    const snap = { courses: [{ ou: 1, name: 'X', grades: [{ id: 7, name: 'Exam 1', num: 80, den: 100, mod: '2026-11-04T00:00:00Z' }, { id: 8, name: 'Exam 2', num: 90, den: 100, mod: '2026-11-05T00:00:00Z' }] }] };
+    const next = buildLibrary(saved, snap, byOu, { tz: TZ });
+    const merged = mergeDocs(saved, next);
+    expect(merged.courses[1].grades.map((g) => g.name)).toEqual(['Exam 1', 'Exam 2']);
+    expect(merged.courses[1].grades[1].mod).toBe('2026-11-05T00:00:00Z');
+    // And a grade that later drops still replaces the higher-sorting older one.
+    const later = buildLibrary(merged, { courses: [{ ou: 1, name: 'X', grades: [{ id: 7, name: 'Exam 1', num: 10, den: 100 }] }] }, byOu, { tz: TZ, now: Date.now() + 1000 });
+    expect(mergeDocs(merged, later).courses[1].grades).toHaveLength(1);
+  });
+});
 
 describe('saving from two devices', () => {
   it('merges concurrent edits instead of overwriting', async () => {
@@ -239,21 +256,74 @@ describe('extension logic', () => {
   it('runs a scheduled sync only once its slot passed and you are at the Mac', () => {
     const now = at('2026-11-02T08:30:00');
     const base = { times: ['08:00', '18:00'], lastSync: new Date(at('2026-11-01T18:05:00')).toISOString(), now };
-    expect(shouldSync({ ...base, lastActive: now - 60e3 })).toBe('scheduled');
-    expect(shouldSync({ ...base, lastActive: now - 3 * 3600e3 })).toBe(null);
-    expect(shouldSync({ ...base, lastSync: new Date(at('2026-11-02T08:10:00')).toISOString(), lastActive: now })).toBe(null);
+    // Whether you're using Safari doesn't matter: the read happens in a hidden tab.
+    expect(shouldSync({ ...base })).toBe('scheduled');
+    expect(shouldSync({ ...base, lastSync: new Date(at('2026-11-02T08:10:00')).toISOString() })).toBe(null);
   });
-  it('retries a failed scheduled sync after 30 minutes, not every minute', () => {
+  it('retries a failed scheduled sync after a while, not every minute', () => {
     const now = at('2026-11-02T08:20:00');
-    const base = { times: ['08:00'], lastSync: new Date(at('2026-11-01T08:05:00')).toISOString(), lastActive: now };
+    const base = { times: ['08:00'], lastSync: new Date(at('2026-11-01T08:05:00')).toISOString() };
     expect(shouldSync({ ...base, lastTry: at('2026-11-02T08:10:00'), now })).toBe(null);
-    expect(shouldSync({ ...base, lastTry: at('2026-11-02T08:10:00'), now: at('2026-11-02T08:45:00'), lastActive: at('2026-11-02T08:44:00') })).toBe('scheduled');
+    expect(shouldSync({ ...base, lastTry: at('2026-11-02T08:10:00'), now: at('2026-11-02T08:45:00') })).toBe('scheduled');
   });
   it('honours a request once, even away from the keyboard', () => {
     const now = at('2026-11-02T12:00:00');
     const req = new Date(now - 60e3).toISOString();
     expect(shouldSync({ times: [], lastSync: new Date(now - 3600e3).toISOString(), request: req, now })).toBe('requested');
     expect(shouldSync({ times: [], lastSync: new Date(now - 3600e3).toISOString(), request: req, lastTry: now - 30e3, now })).toBe(null);
+  });
+  it('keeps retrying a request that failed until one works', () => {
+    const now = at('2026-11-02T12:00:00');
+    const base = { times: [], lastSync: new Date(now - 7200e3).toISOString(), request: new Date(now - 3600e3).toISOString(), now };
+    expect(shouldSync({ ...base, lastTry: now - 60e3 })).toBe(null);
+    expect(shouldSync({ ...base, lastTry: now - 20 * 60e3 })).toBe('requested');
+  });
+  it('waits for you while a sign-in is pending, but tries at once when you ask', () => {
+    const now = at('2026-11-02T18:05:00');
+    const base = { times: ['18:00'], lastSync: new Date(at('2026-11-02T08:00:00')).toISOString(), needsSignin: true, now };
+    expect(shouldSync({ ...base, lastTry: now - 20 * 60e3 })).toBe(null);
+    expect(shouldSync({ ...base, lastTry: now - 61 * 60e3 })).toBe('scheduled');
+    expect(shouldSync({ ...base, lastTry: now - 60e3, request: new Date(now - 1000).toISOString() })).toBe('requested');
+  });
+  it('syncs on a Brightspace visit only when the data is stale or a sign-in was pending', () => {
+    const now = at('2026-11-02T12:00:00');
+    const iso = (ms) => new Date(ms).toISOString();
+    expect(shouldSyncOnVisit({ lastSync: iso(now - 3600e3), now })).toBe(false);
+    expect(shouldSyncOnVisit({ lastSync: iso(now - 4 * 3600e3), now })).toBe(true);
+    expect(shouldSyncOnVisit({ lastSync: iso(now - 4 * 3600e3), lastTry: now - 60e3, now })).toBe(false);
+    // Waiting on a sign-in: a page load counts at once; an old page that's open only now and then.
+    expect(shouldSyncOnVisit({ lastSync: iso(now - 3600e3), needsSignin: true, loaded: true, lastTry: now - 3 * 60e3, now })).toBe(true);
+    expect(shouldSyncOnVisit({ lastSync: iso(now - 3600e3), needsSignin: true, loaded: true, lastTry: now - 30e3, now })).toBe(false);
+    expect(shouldSyncOnVisit({ lastSync: iso(now - 3600e3), needsSignin: true, lastTry: now - 3 * 60e3, now })).toBe(false);
+    expect(shouldSyncOnVisit({ lastSync: iso(now - 3600e3), needsSignin: true, lastTry: now - 20 * 60e3, now })).toBe(true);
+  });
+  it('reads MyLab about weekly, or whenever you press Sync', () => {
+    const now = at('2026-11-10T12:00:00');
+    const iso = (ms) => new Date(ms).toISOString();
+    expect(shouldReadMyLab({ lastMyLab: iso(now - 864e5), now })).toBe(false);
+    expect(shouldReadMyLab({ lastMyLab: iso(now - 864e5), force: true, now })).toBe(true);
+    expect(shouldReadMyLab({ lastMyLab: iso(now - 8 * 864e5), now })).toBe(true);
+    expect(shouldReadMyLab({ lastMyLab: iso(now - 8 * 864e5), lastTry: now - 3600e3, now })).toBe(false);
+    expect(shouldReadMyLab({ lastMyLab: null, now })).toBe(true);
+    expect(shouldReadMyLab({ lastMyLab: iso(now - 2 * 864e5), everyDays: 1, now })).toBe(true);
+  });
+  it('tells a real Brightspace page from its sign-in pages', () => {
+    expect(isAppPage('https://purdue.brightspace.com/d2l/home')).toBe(true);
+    expect(isAppPage('https://purdue.brightspace.com/d2l/le/content/1/Home')).toBe(true);
+    expect(isAppPage('https://purdue.brightspace.com/d2l/login?sessionExpired=1')).toBe(false);
+    expect(isAppPage('https://purdue.brightspace.com/d2l/lp/auth/saml/login')).toBe(false);
+    expect(isAppPage('https://login.microsoftonline.com/x?r=purdue.brightspace.com/d2l/home')).toBe(false);
+    expect(isAppPage(undefined)).toBe(false);
+  });
+  it('alerts on a pending sign-in or a sync that has fallen behind', () => {
+    const now = at('2026-11-05T12:00:00');
+    const iso = (ms) => new Date(ms).toISOString();
+    const fresh = iso(now - 3600e3), seen = iso(now - 60e3);
+    expect(syncAlert({ lastSync: fresh, extSeen: seen, now })).toBe(null);
+    expect(syncAlert({ lastSync: fresh, extError: { at: iso(now - 60e3), kind: 'signin' }, extSeen: seen, now }).id).toBe('signin');
+    expect(syncAlert({ lastSync: iso(now - 60e3), extError: { at: iso(now - 3600e3), kind: 'signin' }, extSeen: seen, now })).toBe(null); // solved since
+    expect(syncAlert({ lastSync: iso(now - 20 * 3600e3), extSeen: seen, now }).id).toBe('failing');
+    expect(syncAlert({ lastSync: iso(now - 20 * 3600e3), extSeen: iso(now - 5 * 3600e3), now }).id).toBe('no-extension');
   });
   it('catches up the morning slot after a night asleep', () => {
     expect(lastSlot(['08:00', '18:00'], new Date('2026-11-02T07:00:00'))).toBe(at('2026-11-01T18:00:00'));
